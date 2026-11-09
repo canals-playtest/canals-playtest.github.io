@@ -1,0 +1,39 @@
+code,label,meaning,family
++1M,1 money,Gain 1 money from supply,money
++2M,2 money,Gain 2 money from supply,money
++3M,3 money,Gain 3 money from supply,money
++4M,4 money,Gain 4 money from supply,money
++1I,1 income,Advance 1 on the income track,money
++1H,1 extra draw,Draw to hand size + 1 at the end of this turn,hand
++1S,+1 hand size,Increase your hand size by 1 permanently,hand
++1C,1 extra buy,Buy one extra card right now (pay full cost),buy
++2C,2 extra buys,Buy two extra cards right now (pay full cost),buy
++1D,1 extra dig,Get one extra dig (pay full cost),dig
++2D,2 extra digs,Get two extra digs (pay full cost),dig
++1B,1 extra build,Get one extra build (pay full cost),build
++1E,1 extra earn,Take income one extra time,money
++2B,2 extra builds,Get two extra builds (pay full cost),build
++1K,1 key,Get one key token,key
+1T,trash 1,Trash 1 card from your hand or discard pile,trash
+1TH,trash 1 (hand),Trash 1 card from your hand,trash
+1TD,trash 1 (discard),Trash 1 card from your discard pile,trash
+2T,trash 2,Trash 2 cards from your hand or discard pile,trash
+D1,discard 1,Discard 1 card from your hand,discard
+D2,discard 2,Discard 2 cards from your hand,discard
+D3,discard 3,Discard 3 cards from your hand,discard
+D,per discard,Per card discarded from your hand,discard
+XD,discard a Dig card,Discard a Dig (brown) card from your hand,discard
+XB,discard a Build card,Discard a Build (green) card from your hand,discard
+XC,discard a Buy card,Discard a Buy (blue) card from your hand,discard
+XE,discard an Earn card,Discard an Earn (yellow) card from your hand,discard
+XS,discard a Special card,Discard a Special (purple) card from your hand,discard
+-1CC,-1 card cost,Reduce the cost of a card you buy by 1,discount
+-2CC,-2 card cost,Reduce the cost of a card you buy by 2,discount
+-1DC,-1 dig cost,Reduce the cost of a dig by 1,discount
+-2DC,-2 dig cost,Reduce the cost of a dig by 2,discount
+-1BC,-1 build cost,Reduce the cost of a build by 1,discount
+-2BC,-2 build cost,Reduce the cost of a build by 2,discount
+-1CC/D,-1 card cost each,Reduce the cost of a card you buy by 1 per card discarded,discount
+-1DC/D,-1 dig cost each,Reduce the cost of a dig by 1 per card discarded,discount
+-1BC/D,-1 build cost each,Reduce the cost of a build by 1 per card discarded,discount
++1M/D,1 money each,Gain 1 money per card discarded,money
