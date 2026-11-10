@@ -337,3 +337,4 @@ input.code-input { width: 7.5rem; text-transform: uppercase; letter-spacing: .1e
 .version-badge { font-size: .8rem; color: var(--muted); font-family: "Nunito", system-ui, sans-serif; }
 .version-badge .dev { color: var(--warn); font-weight: 700; }
 .version-badge a { color: var(--accent); }
+.stat-line small.track { font-size: .72em; color: var(--muted); font-weight: 600; }

@@ -83,7 +83,9 @@ export function rulesView(game, extra = {}) {
         glossaryItem("i-income", "Income.", `What an Earn pays. Starts at ${c.startingIncome}; each building adds ${c.incomePerBuilding}${typed ? " (a Mill more)" : ""}.`),
         glossaryItem("i-hand", "Hand.", `You hold ${c.handSize} cards (more with +1S, up to ${c.handSizeCap}).`),
         glossaryItem("i-deck", "Deck.", "Your cards: draw pile, hand and discard pile. Bought cards go to your discard pile."),
-        c.pearls ? glossaryItem("i-pearl", "Pearls.", `Earned by keeping your cards; at most ${c.pearlCap}. Spent on later turns.`) : null,
+        c.pearls ? glossaryItem("i-pearl", "Pearls.", c.pearlEarning === "track"
+          ? `Earned on your pearl track, one space for each card you keep at the end of a turn; at most ${c.pearlCap}. Spent on later turns.`
+          : `Earned by keeping your cards; at most ${c.pearlCap}. Spent on later turns.`) : null,
         glossaryItem("i-key", "Keys.", "One for each building on a key tile."),
         glossaryItem("i-reach", "Reach.", "Inland hexes your canals opened (see The map)."),
         mats ? glossaryItem("cube-clay", "Cubes.", "Clay, wood and stone on the board, taken by builds. Nobody holds them.") : null)),
@@ -109,7 +111,9 @@ export function rulesView(game, extra = {}) {
         h("li", {}, h("b", {}, "Refill"), ` your hand to ${c.handSize} (or your hand size). When your draw pile runs out, shuffle your discard pile into it.`)),
       h("div", { class: "box" }, h("b", {}, "Discard or keep? "),
         "Discarding makes this turn stronger and cycles your deck faster, so you see your best cards sooner. ",
-        c.pearls ? ["Keeping your cards earns a ", icon("i-pearl"), " pearl to spend later."] : "Keeping them keeps your next turn certain.")),
+        c.pearls ? (c.pearlEarning === "track"
+          ? ["Every card still in your hand at the end of your turn moves your ", icon("i-pearl"), " pearl track a space toward the next pearl."]
+          : ["Keeping your cards earns a ", icon("i-pearl"), " pearl to spend later."]) : "Keeping them keeps your next turn certain.")),
 
     sec("actions",
       h("h3", {}, icon("i-dig"), "Dig"),
@@ -176,7 +180,18 @@ export function rulesView(game, extra = {}) {
       h("p", { class: "muted" }, "Hover a hex you can build on to see the full price and where each cube comes from.")) : null,
 
     c.pearls ? sec("pearls",
-      h("p", {}, "End a turn ", h("b", {}, "without discarding"), " and take a pearl ", icon("i-pearl"), ` (hold at most ${c.pearlCap}). `,
+      c.pearlEarning === "track" ? [
+        h("p", {}, "At the end of your turn, before you refill, move your ", h("b", {}, "pearl track"), " one space for each card still in your hand ",
+          "(not played, discarded or trashed). When it reaches the threshold, take a pearl ", icon("i-pearl"), " and set the marker back to 0. ",
+          `You hold at most ${c.pearlCap}; at the cap the marker waits, full, until you have room.`),
+        h("div", { class: "box" }, h("b", {}, "The threshold"), ` is ${c.pearlThreshold}, plus`,
+          h("ul", {},
+            c.pearlStoredStep ? h("li", {}, `${c.pearlStoredStep === 1 ? "1" : c.pearlStoredStep} for each pearl you are holding: hoard, and the next comes slower;`) : null,
+            c.pearlUsedDivisor ? h("li", {}, `1 for every ${c.pearlUsedDivisor} pearls you have used this game;`) : null,
+            c.pearlHandStep ? h("li", {}, `${c.pearlHandStep === 1 ? "1" : c.pearlHandStep} for each card of hand size above ${c.handSize}.`) : null),
+          "So spending regularly keeps pearls coming, and expect 6 or 7 in a game: when to use them is the choice."),
+        h("p", {}, "On a later turn, while doing your actions, spend them:")]
+      : h("p", {}, "End a turn ", h("b", {}, "without discarding"), " and take a pearl ", icon("i-pearl"), ` (hold at most ${c.pearlCap}). `,
         "On a later turn, while doing your actions, spend them:"),
       h("table", {}, h("tbody", {},
         h("tr", {}, h("td", {}, "1 pearl"), h("td", {}, `+${c.pearlMoney} money`)),

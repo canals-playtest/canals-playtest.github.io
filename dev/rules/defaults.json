@@ -97,9 +97,29 @@
       "value": true, "status": "assumed",
       "note": "A bonus for keeping cards (docs/core-loop.md): end a turn without having discarded and take a pearl. Pearls are spent on your turn from a small menu: pearlMoney money, a redraw, or (pearlActionCost pearls) one more action of the played card's kind. Open question 40"
     },
+    "pearlEarning": {
+      "value": "track", "status": "assumed",
+      "note": "\"track\": at the end of your turn, move your pearl marker one space per card still in your hand (not played or discarded); when it reaches the threshold, take a pearl and reset it. \"noDiscard\": the earlier rule, a pearl for ending a turn without discarding. docs/core-loop.md, open question 40"
+    },
+    "pearlThreshold": {
+      "value": 4, "status": "assumed",
+      "note": "Spaces on the pearl track for a pearl, before the additions below. Aim: 6-7 pearls in a whole game. docs/core-loop.md"
+    },
+    "pearlUsedDivisor": {
+      "value": 2, "status": "assumed",
+      "note": "The threshold rises by the pearls you have used this game divided by this, rounded down. 0: off"
+    },
+    "pearlStoredStep": {
+      "value": 1, "status": "assumed",
+      "note": "The threshold rises by this for each pearl you are holding: spend regularly, or hoard and earn slower"
+    },
+    "pearlHandStep": {
+      "value": 1, "status": "assumed",
+      "note": "The threshold rises by this for each card of hand size above the starting hand (a bigger hand keeps more)"
+    },
     "pearlCap": {
-      "value": 3, "status": "assumed",
-      "note": "Most pearls a player may hold. Open question 40"
+      "value": 5, "status": "assumed",
+      "note": "Most pearls a player may hold. Was 3 when a pearl came every turn without discards. Open question 40"
     },
     "pearlMoney": {
       "value": 2, "status": "assumed",

@@ -708,7 +708,10 @@ function statLine(pl, i, piles) {
     stat("i-key", "keys", pl.keys),
     stat("i-reach", "Reach: inland hexes your canals opened", E.reach(state, i)),
     stat("i-hand", "hand size", pl.handSize),
-    state.config.pearls ? stat("i-pearl", `pearls: banked by ending a turn without discarding (at most ${state.config.pearlCap})`, pl.pearls || 0) : null,
+    state.config.pearls ? (state.config.pearlEarning === "track"
+      ? stat("i-pearl", `pearls held (at most ${state.config.pearlCap}), and the pearl track: each card you keep at the end of your turn moves it a space; at the threshold you take a pearl`,
+        h("span", {}, pl.pearls || 0, h("small", { class: "track" }, ` ${pl.pearlTrack || 0}/${E.pearlNeed(state, pl)}`)))
+      : stat("i-pearl", `pearls: banked by ending a turn without discarding (at most ${state.config.pearlCap})`, pl.pearls || 0)) : null,
     piles ? stat("i-deck", "draw pile / discard pile", `${pl.draw.length}/${pl.discard.length}`) : null);
 }
 
@@ -908,7 +911,9 @@ function pearlMenu(p) {
       () => { redrawing = !redrawing; renderGame(); }),
     btn(`${cfg.pearlActionCost} → +1 ${role && ["dig", "build", "buy"].includes(role) ? role : "action"}`, actionOk,
       "One more action of the played card's kind, at full cost", () => act({ type: "pearl", kind: "action" })),
-    h("span", { class: "muted" }, n < cfg.pearlCap ? " · end this turn without having discarded to bank one" : " · at the cap"));
+    h("span", { class: "muted" }, cfg.pearlEarning === "track"
+      ? ` · pearl track ${p.pearlTrack || 0}/${E.pearlNeed(state, p)}: each card left in your hand at the end of the turn moves it a space${n >= cfg.pearlCap ? " (at the cap, it waits full)" : ""}`
+      : n < cfg.pearlCap ? " · end this turn without having discarded to bank one" : " · at the cap"));
 }
 
 function buildingPicker(p) {

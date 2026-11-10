@@ -282,7 +282,7 @@ export function createGame(data, config = {}) {
     const p = {
       name, colour: PLAYER_COLOURS[i % PLAYER_COLOURS.length],
       draw: shuffle(state, deck), hand: [], discard: [], play: [],
-      money: cfg.startingPurse, income: cfg.startingIncome, keys: 0, handSize: cfg.handSize, pearls: 0,
+      money: cfg.startingPurse, income: cfg.startingIncome, keys: 0, handSize: cfg.handSize, pearls: 0, pearlTrack: 0,
       stats: { turns: 0, boosted: 0, discarded: 0, digs: 0, builds: 0, buys: 0, earns: 0, trashed: 0,
         spent: 0, earned: 0, discoveries: 0, rent: 0, hauled: {}, playedByRole: {}, builtByType: {} },
     };
@@ -833,6 +833,33 @@ export const PEARL_ROLE_POOL = { dig: "dig", build: "build", buy: "buy" };
 /** Pearls this menu choice costs. */
 export const pearlCost = (state, kind) => (kind === "action" ? state.config.pearlActionCost : 1);
 
+/** Spaces for the next pearl: the base, plus pearls used / divisor, plus a
+ * step per pearl held and per card of hand size above the start. As sim/rules.py pearl_need. */
+export function pearlNeed(state, p) {
+  const c = state.config;
+  let need = c.pearlThreshold + c.pearlStoredStep * (p.pearls || 0) + c.pearlHandStep * Math.max(0, p.handSize - c.handSize);
+  if (c.pearlUsedDivisor) need += Math.floor((p.stats?.pearlsSpent || 0) / c.pearlUsedDivisor);
+  return Math.max(1, need);
+}
+
+/** One space per card kept; at the threshold a pearl, and the marker resets.
+ * With no room for a pearl, the marker waits at the threshold. */
+function advancePearlTrack(state, p, kept) {
+  if (kept <= 0) return;
+  const need = pearlNeed(state, p);
+  p.pearlTrack = (p.pearlTrack || 0) + kept;
+  if (p.pearlTrack >= need) {
+    if ((p.pearls || 0) < state.config.pearlCap) {
+      p.pearls = (p.pearls || 0) + 1;
+      p.pearlTrack = 0;
+      log(state, `${p.name} keeps ${kept} card${kept === 1 ? "" : "s"}: the pearl track fills, a pearl (${p.pearls}).`);
+      return;
+    }
+    p.pearlTrack = need;
+  }
+  log(state, `${p.name} keeps ${kept} card${kept === 1 ? "" : "s"}: pearl track ${p.pearlTrack}/${need}.`);
+}
+
 /**
  * Spend pearls while resolving: "money" (1 pearl: pearlMoney money), "redraw"
  * with a hand card's uid (1 pearl: that card to your discard pile, draw one),
@@ -875,13 +902,17 @@ export function pass(state) {
 export function endTurn(state) {
   const t = state.turn, p = currentPlayer(state);
   if (t.phase !== "resolve") return fail("play a card first");
+  const kept = p.hand.length;   // still in hand: not played, discarded or trashed
   p.discard.push(...p.play);
   p.play = [];
   drawTo(state, p, p.handSize + (t.pool.extraDraw || 0));
-  // Kept your cards this turn: take a pearl, spendable from next turn (docs/core-loop.md).
-  if (state.config.pearls && t.played && !t.discards.length && (p.pearls || 0) < state.config.pearlCap) {
-    p.pearls = (p.pearls || 0) + 1;
-    log(state, `${p.name} kept their cards: a pearl (${p.pearls}).`);
+  // Pearls are earned at the end of the turn, so not spendable until the next (docs/core-loop.md).
+  if (state.config.pearls) {
+    if (state.config.pearlEarning === "track") advancePearlTrack(state, p, kept);
+    else if (t.played && !t.discards.length && (p.pearls || 0) < state.config.pearlCap) {
+      p.pearls = (p.pearls || 0) + 1;
+      log(state, `${p.name} kept their cards: a pearl (${p.pearls}).`);
+    }
   }
   state.history.push({
     round: state.round, player: state.current, card: t.played ? state.cards[t.played] : null,

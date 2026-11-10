@@ -146,13 +146,14 @@ function typeExtras(s, hk, bt, left) {
 }
 
 /** Pearl menu, as sim/agent.py spend_pearls: an extra action of the played card's
- * kind when affordable; one pearl cashed when at the cap, so this turn's is not lost. */
+ * kind when affordable; one pearl cashed when holding 3 (on the pearl track each
+ * pearl held makes the next dearer), or at the cap. */
 function spendPearls(s) {
   const p = E.currentPlayer(s), cfg = s.config;
   if (!cfg.pearls || !p.pearls) return;
   const role = E.def(s, s.turn.played).role;
   if (["dig", "build", "buy"].includes(role) && p.pearls >= cfg.pearlActionCost && p.money >= 4) E.spendPearl(s, "action");
-  if (p.pearls >= cfg.pearlCap) E.spendPearl(s, "money");
+  if (p.pearls >= (cfg.pearlEarning === "track" ? Math.min(3, cfg.pearlCap) : cfg.pearlCap)) E.spendPearl(s, "money");
 }
 
 function greedyActions(s) {
@@ -226,8 +227,13 @@ export function greedyTurn(s) {
       const c = JSON.parse(base);
       if (!E.playCard(c, uid, disc).ok) continue;
       greedyActions(c);
-      // Holding cards has some option value, and a turn without discards banks a pearl.
-      const pearl = c.config.pearls && !disc.length && (c.players[me].pearls || 0) < c.config.pearlCap ? 1.2 : 0;
+      // Holding cards has some option value, and kept cards earn pearls: on the
+      // track each one is a share of the next pearl; under the earlier rule a
+      // turn without discards banks one.
+      const mine = c.players[me];
+      const pearl = !c.config.pearls ? 0
+        : c.config.pearlEarning === "track" ? 1.2 * mine.hand.length / E.pearlNeed(c, mine)
+        : !disc.length && (mine.pearls || 0) < c.config.pearlCap ? 1.2 : 0;
       const v = value(c, me) - 0.4 * disc.length + pearl;
       if (v > bestVal) { bestVal = v; best = [uid, disc]; }
     }
