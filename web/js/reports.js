@@ -20,6 +20,8 @@ async function siteConfig() {
   } catch { config = {}; }
   const override = new URLSearchParams(location.search).get("report");
   if (override) config = { ...config, reportUrl: override };
+  // Without a scheme the browser would post to a path on this site instead.
+  if (config.reportUrl && !/^[a-z]+:\/\//i.test(config.reportUrl)) config = { ...config, reportUrl: `https://${config.reportUrl}` };
   return config;
 }
 
