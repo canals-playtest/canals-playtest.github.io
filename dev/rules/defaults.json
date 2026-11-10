@@ -34,8 +34,28 @@
       "note": "Face-up market cards. Market structure is open question 10; docs/cards.md"
     },
     "rounds": {
-      "value": 25, "status": "assumed",
-      "note": "Turns per player. No game-end trigger is settled (open question 7)"
+      "value": 60, "status": "assumed",
+      "note": "A cap on the rounds (turns per player), against stalls: the game normally ends by endOnMarket or endOnKeys. It was a fixed 25 rounds up to playtest-v1. docs/next-version.md section 6"
+    },
+    "endOnMarket": {
+      "value": true, "status": "assumed",
+      "note": "The game ends at the end of the round in which the market decks run out (coastal and inland, both tiers; cards still in the displays don't count). docs/next-version.md section 6"
+    },
+    "endOnKeys": {
+      "value": true, "status": "assumed",
+      "note": "The game ends at the end of the round in which every key tile is on the sea-linked network. docs/next-version.md section 6"
+    },
+    "marketClock": {
+      "value": true, "status": "assumed",
+      "note": "At the end of each round the oldest card leaves each open display (out of the game), and the display refills, so the market runs down even when nobody buys. docs/next-version.md section 6"
+    },
+    "inlandDisplay": {
+      "value": true, "status": "assumed",
+      "note": "true: coastal and inland cards are separate market decks, and the inland cards form a second display (displaySize cards) when the inland opens; until then, once the coastal deck and display are empty there is nothing to buy. false: inland cards shuffle into the coastal deck at the milestone (playtest-v1). Each deck is tiered: coastal-2 under coastal, inland-2 under inland. docs/cards.md"
+    },
+    "cardWeights": {
+      "value": "starting=0,coastal=1,inland=2", "status": "assumed",
+      "note": "How much each card counts toward its colour's multiplier, by deck (coastal-2 counts as coastal): starting cards don't count, so trashing them costs no points. Was 1 for every card up to playtest-v1. docs/scoring.md"
     },
     "vpPerBuilding": {
       "value": 2, "status": "assumed",

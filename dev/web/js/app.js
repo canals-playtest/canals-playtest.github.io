@@ -166,10 +166,15 @@ function setData(d) {
 
 // Bumped when a default changes, so a setup saved in this browser earlier
 // picks up the new value instead of silently keeping the old one.
-const SETUP_VERSION = 5;
+const SETUP_VERSION = 6;
 // The connection rule became settled (2); building types became the working rule (3);
-// the inland milestone replaced the first-opened-hex unlock (4).
-const RESET_AT = { 2: ["connectionRequired"], 3: ["buildingTypes"], 4: ["inlandMilestone"], 5: ["milestoneReward"] };
+// the inland milestone replaced the first-opened-hex unlock (4); the game ends by
+// trigger, with rounds a cap, and the pearl track came in (6).
+const RESET_AT = { 2: ["connectionRequired"], 3: ["buildingTypes"], 4: ["inlandMilestone"], 5: ["milestoneReward"],
+  6: ["rounds", "pearlEarning", "pearlCap", "vpPerReach"] };
+
+const END_REASON = { market: "the market decks ran out", keys: "every key tile reached the network",
+  crossing: "ended by the first crossing", cap: "reached the round cap" };
 
 const SETUP_EXTRAS = { players: ["You", "Greedy AI"], seats: ["human", "greedy"], aiPace: "normal", map: "settled" };
 
@@ -288,7 +293,7 @@ function renderSetup() {
   document.title = "Canals";
   const errors = E.defErrors(data.cards);
   let saved = store.get("canals.game");
-  if (saved && saved.version !== 9) { store.del("canals.game"); saved = null; }
+  if (saved && saved.version !== E.STATE_VERSION) { store.del("canals.game"); saved = null; }
   const defs = data.cards.filter((r) => r.id).map(cardDef);
   const groups = {};
   for (const d of defs) (groups[d.deck || "other"] ||= []).push(d);
@@ -336,7 +341,11 @@ function renderSetup() {
         h("label", { class: "field" }, h("span", {}, "Seed"),
           h("span", { class: "row" }, h("input", { type: "number", value: setup.seed, onchange: (e) => { setup.seed = Number(e.target.value); saveSetup(); } }),
             h("button", { class: "ghost", title: "random seed", onclick: () => { setup.seed = Math.floor(Math.random() * 1e6); saveSetup(); renderSetup(); } }, "↻"))),
-        num("Rounds (turns per player)", "rounds", { min: 1 }),
+        num("Most rounds (a cap)", "rounds", { min: 1 }),
+        check("The game ends when the market decks run out", "endOnMarket", "At the end of that round"),
+        check("The game ends when every key tile is on the network", "endOnKeys", "At the end of that round"),
+        check("Market clock", "marketClock", "The oldest card leaves each display at the end of every round"),
+        check("Inland cards in their own display", "inlandDisplay", "Off: they shuffle into the coastal deck when the inland opens (playtest-v1)"),
         num("Hand size", "handSize", { min: 1 }),
         num("Hand size cap (+1S)", "handSizeCap", { min: 1 }),
         num("Starting purse", "startingPurse", { min: 0 }),
@@ -366,7 +375,7 @@ function renderSetup() {
         num("Random key tiles (if the map has none)", "autoKeyTiles", { min: 0 }))),
 
     h("section", {}, h("h2", {}, "Decks"),
-      h("p", { class: "hint" }, "Set copies per card. Starting copies are per player. Market copies fill one display: ", h("code", {}, "coastal"), " cards from the start, ", h("code", {}, "inland"), " cards once the inland opens at its milestone."),
+      h("p", { class: "hint" }, "Set copies per card. Starting copies are per player. Market copies form two decks: ", h("code", {}, "coastal"), " cards from the start, ", h("code", {}, "inland"), " cards once the inland opens at its milestone; tier 2 (", h("code", {}, "coastal-2"), ", ", h("code", {}, "inland-2"), ") comes out after tier 1 of its deck."),
       summary,
       h("div", { class: "row wrap" },
         h("button", { class: "ghost", onclick: async () => { const t = await pickFile(".csv"); if (t) { data.cards = parseCSV(t); setup = defaultSetup(null); renderSetup(); } } }, "Replace cards CSV…"),
@@ -689,7 +698,7 @@ function previewEffects(d, n) {
   const fx = resolveEffects(d, n);
   const names = { money: "money", income: "income", keys: "keys", handSize: "hand size", dig: "dig", build: "build", buy: "buy",
     digDiscount: "−dig cost", buildDiscount: "−build cost", buyDiscount: "−card cost", trashAny: "trash", trashHand: "trash (hand)",
-    trashDiscard: "trash (discard)", extraDraw: "extra draw" };
+    trashDiscard: "trash (discard)", extraDraw: "extra draw", pearl: "pearl", pearlTrack: "pearl track" };
   return Object.entries(fx).map(([k, v]) => `${names[k] || k} ${v > 0 ? "+" : ""}${v}`).join(", ") || "no effect";
 }
 
@@ -816,19 +825,29 @@ function renderGame(newTurn = false) {
   // Market
   const canBuy = acting && t.phase === "resolve" && t.pool.buy > 0;
   const mk = state.market;
+  const split = state.config.inlandDisplay;
+  const tierLeft = (pile) => {
+    const t2 = pile.filter((uid) => E.deckTier(E.def(state, uid).deck) > 1).length;
+    return `${pile.length} in deck${t2 ? `, ${t2} of them tier 2` : ""}`;
+  };
+  const row = (cards, offset) => h("div", { class: "hand" }, cards.map((uid, i) => {
+    const d = E.def(state, uid), slot = offset + i;
+    const ok = canBuy && E.canBuy(state, slot).ok;
+    const cost = canBuy ? E.buyCost(state, uid) : d.cost;
+    return cardView(d, { cls: ok ? "clickable buyable" : canBuy ? "dim" : "",
+      badge: canBuy ? `pay ${cost}` : (i === 0 && state.config.marketClock ? "leaves next" : null),
+      onclick: ok ? () => act({ type: "buy", slot }) : null });
+  }), cards.length ? null : h("div", { class: "card empty" }, "—"));
   const markets = h("div", { class: "market" },
-    h("h3", {}, "Market ", h("span", { class: "muted" },
-      `(${mk.stack.length} in deck${mk.inland.length ? `, ${mk.inland.length} inland cards join when the inland opens` : ""})`)),
+    h("h3", {}, split ? "Coastal market " : "Market ", h("span", { class: "muted" },
+      `(${tierLeft(mk.stack)}${!split && mk.inland.length ? `; ${mk.inland.length} inland cards join when the inland opens` : ""})`)),
     E.inlandClosed(state) ? h("p", { class: "milestone" }, milestoneLine()) : null,
     state.config.materials ? h("p", { class: "supply" }, h("b", {}, "Import market: "),
       E.RESOURCES.map((r) => `${r} ${state.supply[r]} left, next ${E.marketPrice(state, r)}`).join(" · ")) : null,
-    h("div", { class: "hand" }, mk.display.map((uid, i) => {
-      const d = E.def(state, uid);
-      const ok = canBuy && E.canBuy(state, i).ok;
-      const cost = canBuy ? E.buyCost(state, uid) : d.cost;
-      return cardView(d, { cls: ok ? "clickable buyable" : canBuy ? "dim" : "",
-        badge: canBuy ? `pay ${cost}` : null, onclick: ok ? () => act({ type: "buy", slot: i }) : null });
-    }), mk.display.length ? null : h("div", { class: "card empty" }, "—")));
+    row(mk.display, 0),
+    split ? h("h3", {}, "Inland market ", h("span", { class: "muted" },
+      state.inlandOpen ? `(${tierLeft(mk.inland)})` : `(${mk.inland.length} cards; opens with the inland)`)) : null,
+    split && state.inlandOpen ? row(mk.inlandDisplay, mk.display.length) : null);
 
   // Players
   const others = state.players.map((pl, i) => {
@@ -858,7 +877,8 @@ function renderGame(newTurn = false) {
   app.replaceChildren(h("div", { class: "game" },
     h("header", { class: "top" },
       brand("Canals"),
-      h("div", { class: "turn-info" }, `Round ${state.round} of ${state.config.rounds}`, state.endTriggered ? h("span", { class: "warn" }, " · final round") : null,
+      h("div", { class: "turn-info" }, `Round ${state.round}`, h("span", { class: "muted", title: `The game ends when the market decks run out or every key tile is on the network; at most ${state.config.rounds} rounds` },
+          state.config.endOnMarket ? ` · market: ${state.market.stack.length + state.market.inland.length} cards left` : ` of ${state.config.rounds}`), state.endTriggered ? h("span", { class: "warn" }, " · final round") : null,
         " · ", crest(p, state.current), h("b", {}, whoseSeat(state.current)), " turn", p.ai ? h("span", { class: "muted" }, " (computer)") : null),
       h("div", { class: "row wrap" }, tableBadge(), rulesButton("Rules"),
         h("button", { class: "ghost", onclick: () => download(`canals-game-r${state.round}.json`, JSON.stringify(state)) }, "Save game"),
@@ -1322,7 +1342,7 @@ function renderEnd() {
   const rep = report();
   app.replaceChildren(h("div", { class: "setup end" },
     h("header", { class: "top" }, brand("Game over"),
-      h("span", {}, `${state.round} rounds · ${state.endTriggered ? "ended by the first crossing" : "full length"}`,
+      h("span", {}, `${state.round} rounds · ${END_REASON[state.endReason] || "full length"}`,
         state.finishedAt ? h("span", { class: "muted" }, ` · ${new Date(state.finishedAt).toLocaleString()}`) : null)),
     h("section", {}, h("h2", {}, "Scores"),
       h("table", { class: "decks" },

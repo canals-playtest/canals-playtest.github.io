@@ -14,7 +14,9 @@ const ACTION_WORDS = { dig: "dig", build: "build", buy: "buy", earn: "earn" };
 const ROLE_LETTER = { D: "dig", B: "build", C: "buy", E: "earn", S: "special" };
 
 // code suffix -> effect kind
-const PLUS = { M: "money", I: "income", H: "extraDraw", S: "handSize", C: "buy", D: "dig", B: "build", K: "keys", E: "earn" };
+// P: a pearl, taken at the end of the turn; PT: spaces on the pearl track, as if
+// that many more cards were kept (docs/core-loop.md).
+const PLUS = { M: "money", I: "income", H: "extraDraw", S: "handSize", C: "buy", D: "dig", B: "build", K: "keys", E: "earn", P: "pearl", PT: "pearlTrack" };
 const MINUS = { CC: "buyDiscount", DC: "digDiscount", BC: "buildDiscount" };
 const TRASH = { T: "trashAny", TH: "trashHand", TD: "trashDiscard" };
 

@@ -39,6 +39,16 @@ export function rulesView(game, extra = {}) {
   const reward = { "+1C": "an extra buy, at once", "+1D": "an extra dig, at once", "+1B": "an extra build, at once", "+3M": "3 money" }[c.milestoneReward] || c.milestoneReward;
   const deck = (extra.startingDeck || []).filter(([, n]) => n);
   const deckSize = deck.reduce((a, [, n]) => a + n, 0);
+  // Card weights by deck (rule cardWeights), e.g. { starting: 0, coastal: 1, inland: 2 }.
+  const weights = Object.fromEntries(String(c.cardWeights || "").split(",").filter((x) => x.includes("="))
+    .map((x) => x.split("=")).map(([k, v]) => [k.trim().toLowerCase(), Number(v)]));
+  const weighted = Object.keys(weights).length > 0;
+  const w = (deck) => weights[deck] ?? 1;
+  const split = !!c.inlandDisplay;
+  const ends = [c.endOnMarket ? "the market decks run out" : null, c.endOnKeys ? "every key tile is on the network" : null].filter(Boolean);
+  const endLine = ends.length
+    ? `The game ends at the end of the round in which ${ends.join(", or ")} (after round ${c.rounds} at the latest)`
+    : `The game ends after round ${c.rounds}`;
 
   const sections = [
     ["goal", "The goal"], ["stuff", "What you have"], ["setup", "Setting up"], ["turn", "Your turn"],
@@ -60,7 +70,7 @@ export function rulesView(game, extra = {}) {
       extra.onClose ? h("button", { class: "primary", onclick: extra.onClose }, extra.closeLabel || "Close") : null),
     h("p", { class: "lede" }, "You lead a family of water animals who want to travel inland. Your deck is the land animals you hire: ",
       "they dig canals from the coast, raise buildings along the banks and haggle at the market. Everyone's canals join into one shared network, ",
-      `but each canal and building is yours. After ${plural(c.rounds, "round")}, the player with the most points wins.`),
+      `but each canal and building is yours. ${endLine}; the player with the most points wins.`),
     h("nav", { "aria-label": "Sections" }, sections.map(([id, t]) => h("a", { href: `#rules-${id}`, onclick: (e) => {
       e.preventDefault(); document.getElementById(`rules-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
     } }, t))),
@@ -70,10 +80,15 @@ export function rulesView(game, extra = {}) {
         " by a score you build on the map or in your deck:"),
       h("div", { class: "lanes4" }, lanes.map(([r, ic, a, x, b, note]) => h("div", { class: `lane c-${ROLE_COLOUR[r]}` },
         icon(ic, "big"), h("b", {}, `${a} ${x} ${b}`), h("span", { class: "muted" }, note)))),
-      h("p", {}, "Every card you own counts: hand, draw pile and discard pile. ", role("earn"),
+      h("p", {}, "Every card you own counts: hand, draw pile and discard pile. ",
+        weighted ? [h("b", {}, `Starting cards count ${w("starting")}`), `, coastal market cards ${w("coastal")} each and inland cards ${w("inland")} each`,
+          w("starting") === 0 ? ", so trashing a starting card costs no points. " : ". "] : "",
+        role("earn"),
         " cards score nothing; they are money. No colour multiplies a score its own action builds, so you always need two things at once: ",
         "the cards for a lane, and the work on the map or in the market that feeds it."),
-      h("div", { class: "box" }, h("b", {}, "Example. "), `You own 4 Dig cards and buildings worth 10 VP: that lane scores 4 × 10 = 40. `,
+      h("div", { class: "box" }, h("b", {}, "Example. "), weighted
+        ? `You own 2 coastal and 1 inland Dig card (${2 * w("coastal")} + ${w("inland")} = ${2 * w("coastal") + w("inland")}) and buildings worth 10 VP: that lane scores ${2 * w("coastal") + w("inland")} × 10 = ${10 * (2 * w("coastal") + w("inland"))}. `
+        : `You own 4 Dig cards and buildings worth 10 VP: that lane scores 4 × 10 = 40. `,
         `With 3 Buy cards and a Reach of 6, the Reach lane scores 3 × ${6 * c.vpPerReach} = ${18 * c.vpPerReach}.`),
       h("p", { class: "muted" }, "The player panels show each lane as cards × score, and the total if the game ended now.")),
 
@@ -96,7 +111,9 @@ export function rulesView(game, extra = {}) {
         h("li", {}, "Each player takes a starting deck", deckSize ? ` of ${deckSize} cards (` : "", deck.map(([r, n], i) => [i ? ", " : "", `${n} ${ROLE_NAME[r]}`]), deckSize ? ")" : "",
           `, shuffles it and draws ${c.handSize}.`),
         h("li", {}, `Each player starts with ${c.startingPurse} money and income ${c.startingIncome}.`),
-        h("li", {}, `Shuffle the coastal market cards and lay ${c.displaySize} face up. Set the inland cards aside, shuffled: they join when the inland opens.`),
+        h("li", {}, "Make the market decks. Shuffle the ", h("b", {}, "coastal"), " cards and the ", h("b", {}, "coastal-2"),
+          " cards separately and stack the coastal cards on top; do the same with the ", h("b", {}, "inland"), " and ", h("b", {}, "inland-2"), " cards. ",
+          `Lay ${c.displaySize} coastal cards face up. `, split ? "The inland deck waits face down until the inland opens." : "The inland deck waits until the inland opens, then joins the coastal deck."),
         mats ? h("li", {}, `Fill the import market: ${track.length} cubes each of clay, wood and stone.`) : null)),
 
     sec("turn",
@@ -149,7 +166,8 @@ export function rulesView(game, extra = {}) {
           c.inlandMilestone === "canals"
             ? `When the network has ${perPlayer} canals per player bordering inland hexes, rounded down (${[2, 3, 4].map((n) => `${need(n)} at ${n} players`).join(", ")}), `
             : "When the milestone is reached, ",
-          "the whole inland opens at once, and the inland market cards shuffle into the market.",
+          split ? `the whole inland opens at once, and ${c.displaySize} inland cards are laid out as a second market display.`
+            : "the whole inland opens at once, and the inland market cards shuffle into the market.",
           reward ? ` The player whose dig reaches the milestone takes ${reward}.` : ""),
       ] : null),
 
@@ -183,7 +201,8 @@ export function rulesView(game, extra = {}) {
       c.pearlEarning === "track" ? [
         h("p", {}, "At the end of your turn, before you refill, move your ", h("b", {}, "pearl track"), " one space for each card still in your hand ",
           "(not played, discarded or trashed). When it reaches the threshold, take a pearl ", icon("i-pearl"), " and set the marker back to 0. ",
-          `You hold at most ${c.pearlCap}; at the cap the marker waits, full, until you have room.`),
+          `You hold at most ${c.pearlCap}; at the cap the marker waits, full, until you have room. `,
+          "Some cards move the marker further (", h("code", {}, "+2PT"), ": two more spaces) or give a pearl outright (", h("code", {}, "+1P"), ", also at the end of the turn)."),
         h("div", { class: "box" }, h("b", {}, "The threshold"), ` is ${c.pearlThreshold}, plus`,
           h("ul", {},
             c.pearlStoredStep ? h("li", {}, `${c.pearlStoredStep === 1 ? "1" : c.pearlStoredStep} for each pearl you are holding: hoard, and the next comes slower;`) : null,
@@ -200,12 +219,21 @@ export function rulesView(game, extra = {}) {
       h("p", { class: "muted" }, "A pearl taken this turn can't be spent until your next one. Unspent pearls score nothing.")) : null,
 
     sec("market",
-      h("p", {}, `${c.displaySize} cards lie face up. Buying one refills the display from the market deck. `,
-        "Only coastal cards are in it at first; the inland cards join when the inland opens. Read the market: the colours you buy are your multipliers."),
+      h("p", {}, split
+        ? [`There are two market decks, each with its own display of ${c.displaySize} cards: coastal from the start, inland once the inland opens. `,
+          "Buying a card refills its display from its own deck. If the coastal deck and display run out before the inland opens, there is nothing to buy until it does."]
+        : [`${c.displaySize} cards lie face up. Buying one refills the display from the market deck. `,
+          "Only coastal cards are in it at first; the inland cards join when the inland opens."]),
+      h("p", {}, "Each deck comes in two tiers: the tier-2 cards (", h("b", {}, "coastal-2"), ", ", h("b", {}, "inland-2"),
+        ") come out once tier 1 is used up. They do two actions or more from one card: by then, a starting card is a weak draw, and trashing it is worth a turn."),
+      c.marketClock ? h("p", {}, h("b", {}, "The market clock. "), "At the end of every round, the card that has been in each display longest leaves the game, and the display refills. ",
+        "So the market keeps moving even when nobody buys, and the decks run down toward the end of the game.") : null,
+      h("p", {}, "Read the market: the colours you buy are your multipliers."),
       h("p", {}, "Each card shows its colour and action in the band, its cost on the coin, its effect, and below that its boost: what to discard, then what it gives.")),
 
     sec("end",
-      h("p", {}, `The game ends after round ${c.rounds}. Score the four lanes; the most points wins. Ties go to the player with more money.`)),
+      h("p", {}, `${endLine}. Everyone has had the same number of turns. Score the four lanes; the most points wins. Ties go to the player with more money.`),
+      ends.length ? h("p", { class: "muted" }, "Rushing the key tiles ends the game early; building up a deck and buying through the market makes it longer.") : null),
 
     sec("notation",
       h("p", {}, "Card effects use short codes. Hover a code on any card for its meaning."),

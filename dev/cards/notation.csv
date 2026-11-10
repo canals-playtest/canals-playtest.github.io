@@ -14,6 +14,10 @@ code,label,meaning,family
 +1E,1 extra earn,Take income one extra time,money
 +2B,2 extra builds,Get two extra builds (pay full cost),build
 +1K,1 key,Get one key token,key
++1P,1 pearl,Take a pearl at the end of this turn (after the pearl track; not past the pearl cap),pearl
++1PT,1 pearl track space,Move your pearl marker 1 more space at the end of this turn: as if you kept 1 more card,pearl
++2PT,2 pearl track spaces,Move your pearl marker 2 more spaces at the end of this turn,pearl
++3PT,3 pearl track spaces,Move your pearl marker 3 more spaces at the end of this turn,pearl
 1T,trash 1,Trash 1 card from your hand or discard pile,trash
 1TH,trash 1 (hand),Trash 1 card from your hand,trash
 1TD,trash 1 (discard),Trash 1 card from your discard pile,trash
@@ -37,3 +41,4 @@ XS,discard a Special card,Discard a Special (purple) card from your hand,discard
 -1DC/D,-1 dig cost each,Reduce the cost of a dig by 1 per card discarded,discount
 -1BC/D,-1 build cost each,Reduce the cost of a build by 1 per card discarded,discount
 +1M/D,1 money each,Gain 1 money per card discarded,money
++1D/D,1 dig each,Get one extra dig per card discarded (pay full cost),dig

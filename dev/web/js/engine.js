@@ -227,13 +227,15 @@ const btype = (state, id) => state.buildingTypes.find((b) => b.id === id) || sta
  *   startingDeck: { cardId: copiesPerPlayer }   (default: 1 of each `starting` card)
  *   market: { cardId: copies }                   (default: `copies` column of non-starting cards)
  */
+export const STATE_VERSION = 10;
+
 export function createGame(data, config = {}) {
   const cfg = { ...DEFAULTS, ...config };
   const defs = {};
   for (const row of data.cards) if (row.id) defs[row.id] = cardDef(row);
 
   const state = {
-    version: 9,       // 9: resource cubes and pearls; 8: board grows with players; 7: inland milestone; 6: building types; 5: building materials; 4: canals join at corners and start at harbour mouths
+    version: STATE_VERSION,   // 10: split market, tiers, market clock, game end by trigger; 9: resource cubes and pearls; 8: board grows with players; 7: inland milestone; 6: building types; 5: building materials; 4: canals join at corners and start at harbour mouths
     config: cfg,
     rng: (Number(cfg.seed) >>> 0) || 1,
     defs,
@@ -247,7 +249,9 @@ export function createGame(data, config = {}) {
     supply: null,     // resource -> cubes left in the import market; set below
     crossings: [],    // { hub, edges: [edgeKey], round } (alternative rules)
     players: [],
-    market: { display: [], stack: [], inland: [] },
+    // stack: the coastal deck; display: its cards for sale (oldest first);
+    // inland / inlandDisplay: the same for inland cards (rule inlandDisplay).
+    market: { display: [], stack: [], inland: [], inlandDisplay: [], gone: [] },
     inlandOpen: cfg.inlandMilestone === "none",   // deep digs, inland building, inland cards
     inlandRound: cfg.inlandMilestone === "none" ? 0 : null,
     cards: {},        // uid -> cardId
@@ -257,6 +261,7 @@ export function createGame(data, config = {}) {
     turnNumber: 0,
     turn: null,
     endTriggered: false,
+    endReason: "",    // "market", "keys", "crossing" or "cap"
     over: false,
     log: [],
     history: [],      // per-turn records for analysis
@@ -290,18 +295,25 @@ export function createGame(data, config = {}) {
     drawTo(state, p, p.handSize);
   });
 
-  // Market (cards.md proposal): one display, coastal first; inland cards are
-  // shuffled in when the inland opens at the milestone (inlandMilestone).
+  // Market (docs/cards.md): a coastal and an inland deck, each tiered
+  // (coastal-2 under coastal). The inland cards form their own display when
+  // the inland opens (inlandDisplay), or shuffle into the coastal deck.
   const market = cfg.market ||
     Object.fromEntries(Object.values(defs).filter((d) => d.deck !== "starting").map((d) => [d.id, d.copies]));
+  const piles = { coastal: [], inland: [] };
   for (const [id, n] of Object.entries(market)) {
     const d = defs[id];
     if (!d || n <= 0 || d.deck === "starting") continue;
-    const pile = d.deck === "inland" && cfg.inlandMilestone !== "none" ? state.market.inland : state.market.stack;
+    const pile = deckFamily(d.deck) === "inland" ? piles.inland : piles.coastal;
     for (let k = 0; k < n; k++) pile.push(mint(id));
   }
-  shuffle(state, state.market.stack);
-  shuffle(state, state.market.inland);
+  state.market.stack = tiered(state, piles.coastal);
+  state.market.inland = tiered(state, piles.inland);
+  state.marketSize = state.market.stack.length + state.market.inland.length;
+  if (state.inlandOpen && !cfg.inlandDisplay) {
+    state.market.stack = tiered(state, [...state.market.stack, ...state.market.inland]);
+    state.market.inland = [];
+  }
   restock(state);
 
   log(state, `Game start: ${names.join(", ")}. Seed ${cfg.seed}.`);
@@ -325,9 +337,55 @@ function drawTo(state, p, n) {
   }
 }
 
+/** "coastal-2" -> "coastal": the market deck a card belongs to. */
+export const deckFamily = (deck) => String(deck || "").toLowerCase().split("-")[0];
+/** "coastal-2" -> 2; plain "coastal" is tier 1. */
+export const deckTier = (deck) => { const t = String(deck || "").split("-")[1]; return /^\d+$/.test(t || "") ? Number(t) : 1; };
+
+/** Shuffle each tier on its own and stack them, tier 1 on top (drawn first: the end). */
+function tiered(state, pile) {
+  const tiers = {};
+  for (const uid of pile) (tiers[deckTier(def(state, uid).deck)] ||= []).push(uid);
+  return Object.keys(tiers).map(Number).sort((a, b) => b - a).flatMap((t) => shuffle(state, tiers[t]));
+}
+
 function restock(state) {
-  const m = state.market;
-  while (m.display.length < state.config.displaySize && m.stack.length) m.display.push(m.stack.pop());
+  const m = state.market, size = state.config.displaySize;
+  while (m.display.length < size && m.stack.length) m.display.push(m.stack.pop());
+  if (state.config.inlandDisplay && state.inlandOpen) {
+    while (m.inlandDisplay.length < size && m.inland.length) m.inlandDisplay.push(m.inland.pop());
+  }
+}
+
+/** The cards for sale: buy slots number the coastal display, then the inland one. */
+export const marketCards = (state) => [...state.market.display, ...state.market.inlandDisplay];
+
+/** Both market decks are empty (the inland one too, open or not). */
+export const marketExhausted = (state) => !state.market.stack.length && !state.market.inland.length;
+
+/** Every key tile is on the sea-linked network. */
+export function keysConnected(state) {
+  const keys = Object.keys(state.board.hexes).filter((hk) => state.board.hexes[hk].isKey);
+  if (!keys.length) return false;
+  const net = networkHexes(state, linkedNetwork(state));
+  return keys.every((hk) => net.has(hk));
+}
+
+/**
+ * An estimate of the rounds still to play, for computer players: the market
+ * decks at the pace they have run down so far (a prior of one card a round
+ * plus half a card a player, worth three rounds), within the cap. As
+ * Game.rounds_left in sim/rules.py.
+ */
+export function roundsLeft(state) {
+  const cfg = state.config, done = state.round - 1;
+  const cap = Math.max(0, cfg.rounds - done);
+  if (!cfg.endOnMarket) return cap;
+  const m = state.market, left = m.stack.length + m.inland.length;
+  const drawn = Math.max(0, state.marketSize - left - m.display.length - m.inlandDisplay.length);
+  const prior = 1 + 0.5 * state.players.length;
+  const pace = (drawn + 3 * prior) / (done + 3);
+  return Math.min(cap, left / Math.max(0.5, pace) + 1);
 }
 
 function startTurn(state) {
@@ -467,10 +525,10 @@ export function checkInland(state, quiet = false) {
   state.inlandOpen = true;
   state.inlandRound = state.round;
   const m = state.market;
-  m.stack.push(...m.inland);
-  m.inland = [];
+  if (state.config.inlandDisplay) restock(state);   // the inland display opens
+  else if (quiet) { m.stack.push(...m.inland); m.inland = []; }
+  else { m.stack = tiered(state, [...m.stack, ...m.inland]); m.inland = []; }
   if (!quiet) {
-    shuffle(state, m.stack);
     log(state, `Milestone: ${need} ${what}. The inland is open: canals with inland on both sides, building inland, and the inland cards.`);
     // First-mover reward: the player whose dig reached it, resolved like a discovery.
     const p = currentPlayer(state), code = state.config.milestoneReward;
@@ -771,7 +829,7 @@ export function buyCost(state, uid) {
 
 export function canBuy(state, slot) {
   const t = state.turn, p = currentPlayer(state);
-  const uid = state.market.display[slot];
+  const uid = marketCards(state)[slot];
   if (!uid) return fail("empty slot");
   if (t.phase !== "resolve" || (t.pool.buy || 0) < 1) return fail("no buy available");
   if (p.money < buyCost(state, uid)) return fail("not enough money");
@@ -782,13 +840,14 @@ export function buy(state, slot) {
   const ok = canBuy(state, slot);
   if (!ok.ok) return ok;
   const t = state.turn, p = currentPlayer(state);
-  const uid = state.market.display[slot];
+  const m = state.market, uid = marketCards(state)[slot];
   const d = def(state, uid);
   const cost = buyCost(state, uid);
   t.pool.buy--;
   p.money -= cost; p.stats.spent += cost; p.stats.buys++;
   p.discard.push(uid);
-  state.market.display.splice(slot, 1);
+  if (slot < m.display.length) m.display.splice(slot, 1);
+  else m.inlandDisplay.splice(slot - m.display.length, 1);
   restock(state);
   t.actions.push({ type: "buy", card: d.id, cost });
   log(state, `${p.name} buys ${displayName(d)} for ${cost}.`);
@@ -902,7 +961,8 @@ export function pass(state) {
 export function endTurn(state) {
   const t = state.turn, p = currentPlayer(state);
   if (t.phase !== "resolve") return fail("play a card first");
-  const kept = p.hand.length;   // still in hand: not played, discarded or trashed
+  // Still in hand (not played, discarded or trashed), plus the card's +nPT.
+  const kept = p.hand.length + (t.pool.pearlTrack || 0);
   p.discard.push(...p.play);
   p.play = [];
   drawTo(state, p, p.handSize + (t.pool.extraDraw || 0));
@@ -913,6 +973,12 @@ export function endTurn(state) {
       p.pearls = (p.pearls || 0) + 1;
       log(state, `${p.name} kept their cards: a pearl (${p.pearls}).`);
     }
+    // A card's +nP: after the track, up to the cap.
+    const got = Math.min(t.pool.pearl || 0, Math.max(0, state.config.pearlCap - (p.pearls || 0)));
+    if (got > 0) {
+      p.pearls = (p.pearls || 0) + got;
+      log(state, `${p.name} takes ${got === 1 ? "a pearl" : `${got} pearls`} from ${displayName(def(state, t.played))} (${p.pearls}).`);
+    }
   }
   state.history.push({
     round: state.round, player: state.current, card: t.played ? state.cards[t.played] : null,
@@ -922,8 +988,8 @@ export function endTurn(state) {
   state.turnNumber++;
   state.current = (state.current + 1) % state.players.length;
   if (state.current === 0) {
-    if (state.endTriggered || state.round >= state.config.rounds) {
-      state.over = true;
+    endRound(state);
+    if (state.over) {
       state.turn = { phase: "over", pool: {}, actions: [], discards: [] };
       log(state, "Game over.");
       return OK;
@@ -933,6 +999,31 @@ export function endTurn(state) {
   }
   startTurn(state);
   return OK;
+}
+
+/** The end of a round: the market clock, then the end triggers. As Game.end_round in sim/rules.py. */
+function endRound(state) {
+  const cfg = state.config, m = state.market;
+  if (cfg.marketClock) {
+    for (const [disp, where] of [[m.display, "coastal"], [m.inlandDisplay, "inland"]]) {
+      if (!disp.length) continue;
+      const uid = disp.shift();     // the oldest card leaves the game
+      m.gone.push(uid);
+      log(state, `Market clock: ${displayName(def(state, uid))} leaves the ${where} display.`);
+    }
+    restock(state);
+  }
+  const trigger = (reason, msg) => {
+    if (state.endTriggered) return;
+    state.endTriggered = true; state.endReason = reason;
+    log(state, `${msg} The game ends with this round.`);
+  };
+  if (cfg.endOnMarket && marketExhausted(state)) trigger("market", "The market decks have run out.");
+  if (cfg.endOnKeys && keysConnected(state)) trigger("keys", "Every key tile is on the network.");
+  if (state.endTriggered || state.round >= cfg.rounds) {
+    state.over = true;
+    state.endReason ||= "cap";
+  }
 }
 
 // --------------------------------------------------------------------------- //
@@ -966,6 +1057,7 @@ function checkCrossings(state) {
     log(state, `Crossing completed to ${hub} (${edges.length} segments)!`);
     if (state.config.endOnCrossing && !state.endTriggered) {
       state.endTriggered = true;
+      state.endReason = "crossing";
       log(state, "End triggered: the game ends after this round.");
     }
   }
@@ -974,6 +1066,16 @@ function checkCrossings(state) {
 // --------------------------------------------------------------------------- //
 // Scoring — the four-way cycle (docs/scoring.md). Yellow has no lane.
 // --------------------------------------------------------------------------- //
+
+/** A card's weight toward its colour's multiplier, by deck (rule cardWeights); unlisted decks: 1. */
+export function cardWeights(state) {
+  const w = {};
+  for (const part of String(state.config.cardWeights ?? "").split(",")) {
+    const [k, v] = part.split("=");
+    if (v !== undefined) w[k.trim().toLowerCase()] = Number(v);
+  }
+  return (d) => w[deckFamily(d.deck)] ?? 1;
+}
 
 export function ownedCards(p) { return [...p.draw, ...p.hand, ...p.discard, ...p.play]; }
 
@@ -994,7 +1096,8 @@ export function score(state, pi) {
   const cfg = state.config;
   const counts = Object.fromEntries(Object.keys(ROLES).map((r) => [r, 0]));
   let deckScore = 0;
-  for (const uid of ownedCards(p)) { const d = def(state, uid); counts[d.role]++; deckScore += d.vp; }
+  const weight = cardWeights(state);
+  for (const uid of ownedCards(p)) { const d = def(state, uid); counts[d.role] += weight(d); deckScore += d.vp; }
   const m = (r) => (cfg.multiplierCap > 0 ? Math.min(cfg.multiplierCap, counts[r]) : counts[r]);
 
   let buildingScore = 0;

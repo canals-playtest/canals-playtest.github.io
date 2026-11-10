@@ -42,7 +42,7 @@ export function randomTurn(s, rnd) {
     const opts = [];
     for (const ek of Object.keys(s.board.edges)) if (E.canDig(s, ek).ok) opts.push(() => E.dig(s, ek));
     for (const hk of Object.keys(s.board.hexes)) for (const bt of s.buildingTypes) if (E.canBuild(s, hk, bt.id).ok) opts.push(() => E.build(s, hk, bt.id));
-    s.market.display.forEach((_, i) => E.canBuy(s, i).ok && opts.push(() => E.buy(s, i)));
+    E.marketCards(s).forEach((_, i) => E.canBuy(s, i).ok && opts.push(() => E.buy(s, i)));
     for (const u of p.discard) if (E.canTrash(s, u, "discard").ok && rnd() < 0.3) opts.push(() => E.trash(s, u, "discard"));
     if (!opts.length) break;
     pick(opts)();
@@ -165,7 +165,7 @@ function greedyActions(s) {
     // Build: key tiles first, then the building worth most in rough money terms.
     if (t.build > 0) {
       let best = null, bestScore = -Infinity;
-      const left = Math.max(0, s.config.rounds - s.round);
+      const left = E.roundsLeft(s);
       const counts = E.score(s, s.current).counts;
       for (const hk of Object.keys(s.board.hexes)) {
         const h = s.board.hexes[hk];
@@ -184,7 +184,7 @@ function greedyActions(s) {
     // Buy: specials first, then the priciest affordable card.
     if (t.buy > 0) {
       let best = null, bestScore = -Infinity;
-      s.market.display.forEach((uid, i) => {
+      E.marketCards(s).forEach((uid, i) => {
         if (!E.canBuy(s, i).ok) return;
         const d = E.def(s, uid);
         const sc = d.cost + (d.role === "special" ? 5 : 0) + d.vp;
@@ -205,8 +205,10 @@ function greedyActions(s) {
 
 function value(s, pi) {
   const p = s.players[pi];
-  const left = Math.max(0, s.config.rounds - s.round);
-  const sc = E.score(s, pi).total;
+  const left = E.roundsLeft(s);
+  // Score as if every multiplier were at least 2: starting cards count nothing
+  // (rule cardWeights), so early digs and builds would otherwise look worthless.
+  const sc = E.score(s, pi).lanes.reduce((a, l) => a + Math.max(l.m, 2) * l.s, 0);
   // Cards bought are future turns: value them near their price, less near the end.
   const deck = E.ownedCards(p).reduce((a, u) => a + E.def(s, u).cost, 0) * (left > 8 ? 1.0 : 0.3);
   // Income only pays when an Earn card is played, so it's worth less than cash.
