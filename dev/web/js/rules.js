@@ -226,7 +226,10 @@ export function rulesView(game, extra = {}) {
           "Only coastal cards are in it at first; the inland cards join when the inland opens."]),
       h("p", {}, "Each deck comes in two tiers: the tier-2 cards (", h("b", {}, "coastal-2"), ", ", h("b", {}, "inland-2"),
         ") come out once tier 1 is used up. They do two actions or more from one card: by then, a starting card is a weak draw, and trashing it is worth a turn."),
-      c.marketClock ? h("p", {}, h("b", {}, "The market clock. "), "At the end of every round, the card that has been in each display longest leaves the game, and the display refills. ",
+      c.marketClock && c.marketClock !== "off" ? h("p", {}, h("b", {}, "The market clock. "),
+        c.marketClock === "unbought"
+          ? "At the end of every round, in each display nobody bought from that round, the card that has been there longest leaves the game, and the display refills. "
+          : "At the end of every round, the card that has been in each display longest leaves the game, and the display refills. ",
         "So the market keeps moving even when nobody buys, and the decks run down toward the end of the game.") : null,
       h("p", {}, "Read the market: the colours you buy are your multipliers."),
       h("p", {}, "Each card shows its colour and action in the band, its cost on the coin, its effect, and below that its boost: what to discard, then what it gives.")),

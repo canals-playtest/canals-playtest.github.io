@@ -46,8 +46,8 @@
       "note": "The game ends at the end of the round in which every key tile is on the sea-linked network. docs/next-version.md section 6"
     },
     "marketClock": {
-      "value": true, "status": "assumed",
-      "note": "At the end of each round the oldest card leaves each open display (out of the game), and the display refills, so the market runs down even when nobody buys. docs/next-version.md section 6"
+      "value": "unbought", "status": "assumed",
+      "note": "The market clock, at the end of each round: the oldest card in a display leaves the game and the display refills, so the market runs down even when nobody buys. \"unbought\": only in a display nobody bought from this round (the designer's middle ground, 2026-11-10); \"always\": every open display; \"off\": never. docs/cards.md"
     },
     "inlandDisplay": {
       "value": true, "status": "assumed",

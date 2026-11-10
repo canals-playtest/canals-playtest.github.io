@@ -4,7 +4,7 @@ import { parseCSV } from "./csv.js";
 import * as E from "./engine.js";
 import { cardDef, ROLES, displayName, legalDiscardCount, resolveEffects } from "./notation.js";
 import { renderBoard } from "./board.js";
-import { AGENTS, makeRng } from "./agents.js";
+import { AGENTS, makeRng, setLanePrior, LANE_ROLES } from "./agents.js";
 import { installSprites, icon, crest, ROLE_ICON, hasSymbol } from "./sprites.js";
 import { showRules } from "./rules.js";
 import { applyCommand } from "./commands.js";
@@ -166,12 +166,12 @@ function setData(d) {
 
 // Bumped when a default changes, so a setup saved in this browser earlier
 // picks up the new value instead of silently keeping the old one.
-const SETUP_VERSION = 6;
+const SETUP_VERSION = 7;
 // The connection rule became settled (2); building types became the working rule (3);
 // the inland milestone replaced the first-opened-hex unlock (4); the game ends by
 // trigger, with rounds a cap, and the pearl track came in (6).
 const RESET_AT = { 2: ["connectionRequired"], 3: ["buildingTypes"], 4: ["inlandMilestone"], 5: ["milestoneReward"],
-  6: ["rounds", "pearlEarning", "pearlCap", "vpPerReach"] };
+  6: ["rounds", "pearlEarning", "pearlCap", "vpPerReach"], 7: ["marketClock"] };
 
 const END_REASON = { market: "the market decks ran out", keys: "every key tile reached the network",
   crossing: "ended by the first crossing", cap: "reached the round cap" };
@@ -344,7 +344,7 @@ function renderSetup() {
         num("Most rounds (a cap)", "rounds", { min: 1 }),
         check("The game ends when the market decks run out", "endOnMarket", "At the end of that round"),
         check("The game ends when every key tile is on the network", "endOnKeys", "At the end of that round"),
-        check("Market clock", "marketClock", "The oldest card leaves each display at the end of every round"),
+        select("Market clock (end of each round)", "marketClock", [["unbought", "the oldest card leaves a display nobody bought from"], ["always", "the oldest card leaves every display"], ["off", "off"]]),
         check("Inland cards in their own display", "inlandDisplay", "Off: they shuffle into the coastal deck when the inland opens (playtest-v1)"),
         num("Hand size", "handSize", { min: 1 }),
         num("Hand size cap (+1S)", "handSizeCap", { min: 1 }),
@@ -621,7 +621,7 @@ function afterMove(ended) {
   if (ended) { undo = []; sel = { play: null, discards: new Set() }; redrawing = false; }
   persist();
   pushState();
-  if (state.over) { store.del("canals.game"); keepFinished(state); sendReport(); return renderEnd(); }
+  if (state.over) { store.del("canals.game"); learnLanes(state); keepFinished(state); sendReport(); return renderEnd(); }
   renderGame(ended);
 }
 
@@ -830,12 +830,14 @@ function renderGame(newTurn = false) {
     const t2 = pile.filter((uid) => E.deckTier(E.def(state, uid).deck) > 1).length;
     return `${pile.length} in deck${t2 ? `, ${t2} of them tier 2` : ""}`;
   };
+  const clock = E.clockMode(state.config);
+  const leavesNext = (where) => clock === "always" || (clock === "unbought" && !mk.bought?.[where]);
   const row = (cards, offset) => h("div", { class: "hand" }, cards.map((uid, i) => {
     const d = E.def(state, uid), slot = offset + i;
     const ok = canBuy && E.canBuy(state, slot).ok;
     const cost = canBuy ? E.buyCost(state, uid) : d.cost;
     return cardView(d, { cls: ok ? "clickable buyable" : canBuy ? "dim" : "",
-      badge: canBuy ? `pay ${cost}` : (i === 0 && state.config.marketClock ? "leaves next" : null),
+      badge: canBuy ? `pay ${cost}` : (i === 0 && leavesNext(offset === 0 ? "coastal" : "inland") ? "leaves next" : null),
       onclick: ok ? () => act({ type: "buy", slot }) : null });
   }), cards.length ? null : h("div", { class: "card empty" }, "—"));
   const markets = h("div", { class: "market" },
@@ -1379,8 +1381,55 @@ function renderEnd() {
 
 // --------------------------------------------------------------------------- //
 
+// --------------------------------------------------------------------------- //
+// The computer players' lane priors (agents.js): how many cards of each scoring
+// colour they usually end with. The shipped value (bots/lane-priors.json,
+// learned by tools/learn_priors.mjs) is the prior, worth up to 20 games; every
+// game they finish in this browser updates the mean, Bayes-style.
+// --------------------------------------------------------------------------- //
+const LANES_KEY = "canals.lanePrior";
+let shippedLanes = { prior: { dig: 2, build: 2, buy: 2, special: 2 }, games: 4, builtFor: null };
+
+async function loadLanePriors() {
+  try {
+    const doc = await (await fetch(repo("bots/lane-priors.json"))).json();
+    const g = doc.browser?.greedy;
+    if (g) shippedLanes = { prior: g, games: Math.max(1, Math.min(20, g.games || 0)), builtFor: doc.browser_built_for || null };
+  } catch { /* keep the default */ }
+  applyLanePriors();
+}
+
+/** What this browser has seen, for the shipped priors it was learned against. */
+function localLanes() {
+  const l = store.get(LANES_KEY);
+  return l && l.builtFor === shippedLanes.builtFor ? l : { builtFor: shippedLanes.builtFor, games: 0, sum: {} };
+}
+
+function applyLanePriors() {
+  const l = localLanes(), n0 = shippedLanes.games;
+  setLanePrior(Object.fromEntries(LANE_ROLES.map((r) =>
+    [r, (n0 * shippedLanes.prior[r] + (l.sum[r] || 0)) / (n0 + l.games)])));
+}
+
+/** After a finished game: add each greedy computer player's final counts. */
+function learnLanes(g) {
+  if (!g?.over || g.lanesLearned || net.role === "guest") return;
+  const bots = g.players.map((p, i) => [p, i]).filter(([p]) => p.ai === "greedy");
+  g.lanesLearned = true;
+  if (!bots.length) return;
+  const l = localLanes();
+  for (const [, i] of bots) {
+    const c = E.score(g, i).counts;
+    for (const r of LANE_ROLES) l.sum[r] = (l.sum[r] || 0) + c[r];
+    l.games++;
+  }
+  store.set(LANES_KEY, l);
+  applyLanePriors();
+}
+
 (async function main() {
   installSprites();
+  loadLanePriors();
   try {
     setData(await loadRepoData());
     const joining = location.hash.match(/^#join=([A-Za-z0-9]+)/);

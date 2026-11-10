@@ -251,7 +251,8 @@ export function createGame(data, config = {}) {
     players: [],
     // stack: the coastal deck; display: its cards for sale (oldest first);
     // inland / inlandDisplay: the same for inland cards (rule inlandDisplay).
-    market: { display: [], stack: [], inland: [], inlandDisplay: [], gone: [] },
+    // bought: whether anyone bought from each display this round (marketClock "unbought").
+    market: { display: [], stack: [], inland: [], inlandDisplay: [], gone: [], bought: { coastal: false, inland: false } },
     inlandOpen: cfg.inlandMilestone === "none",   // deep digs, inland building, inland cards
     inlandRound: cfg.inlandMilestone === "none" ? 0 : null,
     cards: {},        // uid -> cardId
@@ -846,8 +847,8 @@ export function buy(state, slot) {
   t.pool.buy--;
   p.money -= cost; p.stats.spent += cost; p.stats.buys++;
   p.discard.push(uid);
-  if (slot < m.display.length) m.display.splice(slot, 1);
-  else m.inlandDisplay.splice(slot - m.display.length, 1);
+  if (slot < m.display.length) { m.display.splice(slot, 1); m.bought.coastal = true; }
+  else { m.inlandDisplay.splice(slot - m.display.length, 1); m.bought.inland = true; }
   restock(state);
   t.actions.push({ type: "buy", card: d.id, cost });
   log(state, `${p.name} buys ${displayName(d)} for ${cost}.`);
@@ -1001,18 +1002,23 @@ export function endTurn(state) {
   return OK;
 }
 
+/** The marketClock rule: "unbought", "always" or "off" (true/false from older setups). */
+export const clockMode = (cfg) => (cfg.marketClock === true ? "always" : !cfg.marketClock ? "off" : String(cfg.marketClock));
+
 /** The end of a round: the market clock, then the end triggers. As Game.end_round in sim/rules.py. */
 function endRound(state) {
   const cfg = state.config, m = state.market;
-  if (cfg.marketClock) {
+  const clock = clockMode(cfg);
+  if (clock !== "off") {
     for (const [disp, where] of [[m.display, "coastal"], [m.inlandDisplay, "inland"]]) {
-      if (!disp.length) continue;
+      if (!disp.length || (clock === "unbought" && m.bought[where])) continue;
       const uid = disp.shift();     // the oldest card leaves the game
       m.gone.push(uid);
       log(state, `Market clock: ${displayName(def(state, uid))} leaves the ${where} display.`);
     }
     restock(state);
   }
+  m.bought = { coastal: false, inland: false };
   const trigger = (reason, msg) => {
     if (state.endTriggered) return;
     state.endTriggered = true; state.endReason = reason;

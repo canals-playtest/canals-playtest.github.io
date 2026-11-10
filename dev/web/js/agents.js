@@ -61,10 +61,10 @@ export const GREEDY_TUNING = { lookahead: 6, hubWorth: 20, remoteDig: 2 };  // l
 function hexWorth(s, hk, counts) {
   const h = s.board.hexes[hk], cfg = s.config;
   let w = 0;
-  if (!h.shore && cfg.networkScore === "reach") w += Math.max(1, counts.buy) * cfg.vpPerReach;
+  if (!h.shore && cfg.networkScore === "reach") w += Math.max(0.5, counts.buy) * cfg.vpPerReach;
   if (h.bonus && s.claimed[hk] === undefined) w += 4;
   if (h.slots > (s.buildings[hk] || []).length && s.board.terrain[h.terrain].buildable) {
-    w += 0.4 * (Math.max(1, counts.dig) * cfg.vpPerBuilding + cfg.incomePerBuilding);
+    w += 0.4 * (Math.max(0.5, counts.dig) * cfg.vpPerBuilding + cfg.incomePerBuilding);
     if (h.isKey) w += Math.max(0.5, counts.special) * cfg.vpPerKey * 0.6;
   }
   if (cfg.networkScore === "crossings" && s.hubs.includes(hk) && !s.crossings.some((c) => c.hub === hk)) w += GREEDY_TUNING.hubWorth;
@@ -96,7 +96,7 @@ function digsTo(s, adj, hk) {
 function pickDig(s) {
   const link = E.linkedNetwork(s);
   const net = E.networkHexes(s, link);
-  const counts = E.score(s, s.current).counts;
+  const counts = expectedCounts(s, s.current);
   const adj = borderGraph(s);
   // Targets: unreached hexes worth steering toward, a few digs out. Canals
   // join at corners, so distance is counted in digs along borders.
@@ -166,13 +166,13 @@ function greedyActions(s) {
     if (t.build > 0) {
       let best = null, bestScore = -Infinity;
       const left = E.roundsLeft(s);
-      const counts = E.score(s, s.current).counts;
+      const counts = expectedCounts(s, s.current);
       for (const hk of Object.keys(s.board.hexes)) {
         const h = s.board.hexes[hk];
         for (const bt of s.buildingTypes) {
           if (!E.canBuild(s, hk, bt.id).ok) continue;
           const vp = E.buildingVP(s, hk, { p: s.current, type: bt.id });
-          const sc = (h.isKey ? Math.max(0.5, counts.special) * s.config.vpPerKey : 0) + 1.2 * vp * Math.max(1, counts.dig)
+          const sc = (h.isKey ? Math.max(0.5, counts.special) * s.config.vpPerKey : 0) + 1.2 * vp * Math.max(0.5, counts.dig)
             + 0.4 * (s.config.incomePerBuilding + bt.income) * Math.min(left, 8)
             + 0.8 * bt.moneyPerCanal * E.canalsAround(s, hk) - 0.8 * E.buildCost(s, hk, bt.id)
             + typeExtras(s, hk, bt, left);
@@ -206,9 +206,9 @@ function greedyActions(s) {
 function value(s, pi) {
   const p = s.players[pi];
   const left = E.roundsLeft(s);
-  // Score as if every multiplier were at least 2: starting cards count nothing
-  // (rule cardWeights), so early digs and builds would otherwise look worthless.
-  const sc = E.score(s, pi).lanes.reduce((a, l) => a + Math.max(l.m, 2) * l.s, 0);
+  // Each lane's score times its expected final multiplier (expectedCounts).
+  const score = E.score(s, pi), exp = expectedCounts(s, pi, score.counts);
+  const sc = score.lanes.reduce((a, l) => a + (exp[l.mult] ?? l.m) * l.s, 0);
   // Cards bought are future turns: value them near their price, less near the end.
   const deck = E.ownedCards(p).reduce((a, u) => a + E.def(s, u).cost, 0) * (left > 8 ? 1.0 : 0.3);
   // Income only pays when an Earn card is played, so it's worth less than cash.
@@ -216,6 +216,30 @@ function value(s, pi) {
   const owned = Object.values(s.dug).filter((o) => o === pi).length;
   return sc + deck + 0.5 * owned + 0.8 * p.money + incomeWorth * p.income * Math.min(left, 10) + 3 * p.handSize + 0.3 * p.keys
     + 1.2 * (p.pearls || 0);
+}
+
+// Lane priors (bots/lane-priors.json, "browser"): the mean number of cards of
+// each scoring colour (weighted, rule cardWeights) the greedy bot holds in its
+// final deck. The bot expects to end with its current count plus the growth
+// still to come, count + (1 - f) * prior, f the share of the game played: its
+// usual final deck at the start, the real count at the end. Starting cards
+// count 0, so without this every lane looks worthless early on. The table
+// sets it from the shipped file and what it learns after each game (app.js).
+export const LANE_ROLES = ["dig", "build", "buy", "special"];
+let lanePrior = { dig: 2, build: 2, buy: 2, special: 2 };
+export function setLanePrior(p) {
+  for (const r of LANE_ROLES) if (Number.isFinite(p?.[r])) lanePrior[r] = p[r];
+}
+export const getLanePrior = () => ({ ...lanePrior });
+
+/** Each scoring colour's expected final count for player pi. */
+export function expectedCounts(s, pi, counts = E.score(s, pi).counts) {
+  const done = s.round - 1, f = done / Math.max(1, done + E.roundsLeft(s));
+  const cap = s.config.multiplierCap;
+  return Object.fromEntries(LANE_ROLES.map((r) => {
+    const v = counts[r] + (1 - f) * lanePrior[r];
+    return [r, cap > 0 ? Math.min(cap, v) : v];
+  }));
 }
 
 export function greedyTurn(s) {
