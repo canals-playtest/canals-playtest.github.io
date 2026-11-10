@@ -331,3 +331,6 @@ input.code-input { width: 7.5rem; text-transform: uppercase; letter-spacing: .1e
 .start { align-items: center; flex-wrap: wrap; }
 .share-switch { margin-right: auto; color: var(--muted); font-size: .9rem; }
 .share-switch input { margin: 0 .35rem 0 0; }
+.share-switch { display: flex; flex-direction: column; gap: .15rem; }
+.report-status { font-size: .8rem; }
+.small-btn { padding: .1rem .5rem; font-size: .8rem; }

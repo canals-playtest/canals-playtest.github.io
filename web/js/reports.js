@@ -8,21 +8,22 @@
 // switched sharing off. ?report=URL overrides the address, for testing.
 
 const QUEUE = "canals.reportQueue";
+const LAST = "canals.reportLast";       // { at, ok, status, error } of the last attempt
 const SHARE = "canals.shareReports";
 const MAX_QUEUED = 20;
 
-let config = null;
+let site = null;
 async function siteConfig() {
-  if (config) return config;
+  if (site) return site;
   try {
     const res = await fetch(new URL("../site.json", import.meta.url), { cache: "no-store" });
-    config = res.ok ? await res.json() : {};
-  } catch { config = {}; }
+    site = res.ok ? await res.json() : {};
+  } catch { site = {}; }
   const override = new URLSearchParams(location.search).get("report");
-  if (override) config = { ...config, reportUrl: override };
+  if (override) site = { ...site, reportUrl: override };
   // Without a scheme the browser would post to a path on this site instead.
-  if (config.reportUrl && !/^[a-z]+:\/\//i.test(config.reportUrl)) config = { ...config, reportUrl: `https://${config.reportUrl}` };
-  return config;
+  if (site.reportUrl && !/^[a-z]+:\/\//i.test(site.reportUrl)) site = { ...site, reportUrl: `https://${site.reportUrl}` };
+  return site;
 }
 
 const read = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d; } catch { return d; } };
@@ -37,6 +38,11 @@ export async function reportingAvailable() { return !!(await siteConfig()).repor
 
 /** The site's build, to tell reports from different versions apart. */
 export async function siteVersion() { return (await siteConfig()).version || null; }
+
+/** How many reports wait in this browser, and how the last attempt went. */
+export function reportStatus() {
+  return { queued: read(QUEUE, []).length, last: read(LAST, null) };
+}
 
 /** Queue a finished game's report and try to send everything queued. */
 export async function submitReport(rep) {
@@ -58,12 +64,18 @@ export function flushReports() {
     for (const item of [...q]) {
       try {
         const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(item.rep) });
+        let why = "";
+        if (!res.ok) { try { const j = await res.json(); why = [j.error, j.detail].filter(Boolean).join(": "); } catch { why = res.statusText; } }
+        write(LAST, { at: Date.now(), ok: res.ok, status: res.status, error: res.ok ? null : `${res.status} ${why}`.trim() });
         if (!res.ok && res.status !== 400 && res.status !== 413) continue;   // keep it and retry later
         // Sent, or refused for good (malformed or too large): either way it leaves the queue.
         q = q.filter((x) => x.id !== item.id);
         write(QUEUE, q);
         if (res.ok) sent++;
-      } catch { /* offline: retry later */ }
+      } catch (err) {
+        // Offline, or the Worker refused this site (the browser then hides its reply): retry later.
+        write(LAST, { at: Date.now(), ok: false, status: 0, error: `couldn't reach the report service (${err.message || err}); offline, or ALLOWED_ORIGINS doesn't match this site` });
+      }
     }
     return { sent, queued: q.length };
   })().finally(() => { flushing = null; });

@@ -9,7 +9,7 @@ import { installSprites, icon, crest, ROLE_ICON, hasSymbol } from "./sprites.js"
 import { showRules } from "./rules.js";
 import { applyCommand } from "./commands.js";
 import { hostTable, joinTable, makeCode, cleanCode, shareLink } from "./net.js";
-import { submitReport, flushReports, sharing, setSharing, reportingAvailable, siteVersion } from "./reports.js";
+import { submitReport, flushReports, sharing, setSharing, reportingAvailable, siteVersion, reportStatus } from "./reports.js";
 
 const $ = (sel) => document.querySelector(sel);
 const app = $("#app");
@@ -392,12 +392,23 @@ function renderSetup() {
 /** "Share finished games with the designer", shown only where reporting is set up. */
 function shareSwitch() {
   const slot = h("span", { class: "share-switch" });
-  reportingAvailable().then((on) => {
-    if (!on) return;
+  const draw = () => {
+    const { queued, last } = reportStatus();
+    const send = h("button", { class: "ghost small-btn", onclick: async () => {
+      send.disabled = true; send.textContent = "Sending…";
+      const r = await flushReports();
+      toast(r.sent ? `Sent ${r.sent} report${r.sent === 1 ? "" : "s"}` : "Not sent; see the note");
+      draw();
+    } }, "Send now");
     slot.replaceChildren(h("label", { class: "row", title: "Each finished game's report (settings, scores, decks, turn history and log, with the players' names) goes to the designer for playtest analysis." },
-      h("input", { type: "checkbox", checked: sharing() || null, onchange: (e) => { setSharing(e.target.checked); if (e.target.checked) flushReports(); } }),
-      h("span", {}, "Share finished games with the designer")));
-  });
+      h("input", { type: "checkbox", checked: sharing() || null, onchange: (e) => { setSharing(e.target.checked); if (e.target.checked) flushReports().then(draw); } }),
+      h("span", {}, "Share finished games with the designer")),
+      queued ? h("span", { class: "report-status" }, `${queued} report${queued === 1 ? "" : "s"} waiting to send`,
+        last && !last.ok ? h("span", { class: "warn" }, ` (last try: ${last.error})`) : null, " ", send)
+      : last?.ok ? h("span", { class: "report-status" }, `Last report sent ${new Date(last.at).toLocaleString()}.`) : null);
+  };
+  // Show the switch once the site says reporting is set up, after this visit's own attempt to send.
+  reportingAvailable().then((on) => { if (on) flushReports().then(draw, draw); });
   return slot;
 }
 
