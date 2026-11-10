@@ -94,7 +94,11 @@ export function renderBoard(svg, state, handlers) {
       ? `${state.players[owner].name}'s harbour: ${state.players[owner].name}'s starting dig cards start here or from their own canals; bought dig cards may join anyone's`
       : state.harbours?.length ? "harbour (nobody's): only bought dig cards start here" : "harbour: canals may enter the land only here");
     if (h.shore) title.push("shore: beside open water, so it never counts for Reach");
-    if (E.inlandClosed(state) && h.terrain === "inland") title.push("inland, closed until the milestone: canals may run along its border with the coast, but none between two inland hexes, and nothing is built here");
+    if (h.band && !t.water) title.push(`${h.band}: Reach ${E.hexReach(state, h.key)} if opened`);
+    if (t.wall) title.push("crag: no site, and no canal between two crags");
+    if (t.water && h.band) title.push("lake: once a linked canal reaches one of its corners, all its corners are linked");
+    if (h.band === "highland" && state.config.highlandNeedsBought) title.push("highland: only bought dig cards dig here");
+    if (E.inlandClosed(state) && E.isInland(state, h.key)) title.push("closed until the inland milestone: canals may run along its border with the coast, but none with inland on both sides, and nothing is built here");
     if (E.isOpened(state, h.key, net)) title.push("opened: counts for Reach for every player whose canal touches it");
     if (h.bonus) title.push(state.claimed[h.key] !== undefined
       ? `discovery ${h.bonus}: taken by ${state.players[state.claimed[h.key]].name}`
@@ -122,7 +126,7 @@ export function renderBoard(svg, state, handlers) {
     el("title", {}, poly).textContent = title.join("\n");
 
     if (E.isOpened(state, h.key, net)) poly.classList.add("opened");
-    if (E.inlandClosed(state) && h.terrain === "inland") poly.classList.add("locked");
+    if (E.inlandClosed(state) && E.isInland(state, h.key)) poly.classList.add("locked");
     if (showHubs && state.hubs.includes(h.key)) {
       el("circle", { cx, cy, r: S * 0.62, class: "hub" + (state.crossings.some((c) => c.hub === h.key) ? " done" : "") }, gHex);
     }

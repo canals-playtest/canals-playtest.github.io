@@ -61,7 +61,7 @@ export const GREEDY_TUNING = { lookahead: 6, hubWorth: 20, remoteDig: 2 };  // l
 function hexWorth(s, hk, counts) {
   const h = s.board.hexes[hk], cfg = s.config;
   let w = 0;
-  if (!h.shore && cfg.networkScore === "reach") w += Math.max(0.5, counts.buy) * cfg.vpPerReach;
+  if (!h.shore && cfg.networkScore === "reach") w += Math.max(0.5, counts.buy) * E.hexReach(s, hk);
   if (h.bonus && s.claimed[hk] === undefined) w += 4;
   if (h.slots > (s.buildings[hk] || []).length && s.board.terrain[h.terrain].buildable) {
     w += 0.4 * (Math.max(0.5, counts.dig) * cfg.vpPerBuilding + cfg.incomePerBuilding);

@@ -140,7 +140,16 @@ const PATTERNS = `
   <pattern id="pat-inland" width="22" height="20" patternUnits="userSpaceOnUse">
     <rect width="22" height="20" fill="#c3d6a0"/>
     <path d="M4 9 l1 -3 M6 9 l0 -4 M8 9 l-1 -3" stroke="#90ad6a" stroke-width="1" stroke-linecap="round"/>
-    <path d="M15 18 l1 -3 M17 18 l0 -4 M19 18 l-1 -3" stroke="#a3bd7c" stroke-width="1" stroke-linecap="round"/></pattern>`;
+    <path d="M15 18 l1 -3 M17 18 l0 -4 M19 18 l-1 -3" stroke="#a3bd7c" stroke-width="1" stroke-linecap="round"/></pattern>
+  <pattern id="pat-highland" width="24" height="20" patternUnits="userSpaceOnUse">
+    <rect width="24" height="20" fill="#d3c4a2"/>
+    <path d="M3 14 l4 -6 l4 6 M14 7 l3 -4 l3 4" fill="none" stroke="#a8946c" stroke-width="1.1" stroke-linejoin="round"/></pattern>
+  <pattern id="pat-lake" width="18" height="12" patternUnits="userSpaceOnUse">
+    <rect width="18" height="12" fill="#8fc3d6"/>
+    <path d="M2 6 q2 -2 4 0 t4 0" fill="none" stroke="#c6e2ec" stroke-width="1" stroke-linecap="round"/></pattern>
+  <pattern id="pat-crag" width="20" height="18" patternUnits="userSpaceOnUse">
+    <rect width="20" height="18" fill="#a89a86"/>
+    <path d="M2 15 l5 -10 l5 10 M10 15 l4 -7 l4 7" fill="#978a75" stroke="#5f523f" stroke-width="1.1" stroke-linejoin="round"/></pattern>`;
 
 /** Install the sprite sheet once; later calls do nothing. */
 export function installSprites() {
@@ -155,7 +164,7 @@ export function installSprites() {
 }
 
 export const hasSymbol = (id) => id in SYMBOLS;
-export const TERRAIN_PATTERN = { sea: "pat-sea", coastal: "pat-coastal", inland: "pat-inland" };
+export const TERRAIN_PATTERN = { sea: "pat-sea", coastal: "pat-coastal", inland: "pat-inland", highland: "pat-highland", lake: "pat-lake", crag: "pat-crag" };
 export const ROLE_ICON = { dig: "i-dig", build: "i-build", buy: "i-buy", earn: "i-earn", special: "i-special" };
 export const crestOf = (i) => CRESTS[i % CRESTS.length];
 

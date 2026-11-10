@@ -26,6 +26,7 @@ const SOURCES = {
   // Alternatives (docs/alternatives.md), loaded but only used when chosen in setup.
   altHexes: [repo("board/alternatives/hexes-12x11-hubs.csv")],
   classicHexes: [repo("board/alternatives/hexes-classic-9x6.csv")],
+  stage1Hexes: [repo("board/alternatives/hexes-stage1.csv")],
   altMarket: [repo("cards/alternatives/market-sample.csv")],
   notation: [repo("cards/notation.csv")],
 };
@@ -368,7 +369,7 @@ function renderSetup() {
         select("First to reach it takes", "milestoneReward", [["+1C", "+1C (an extra buy)"], ["+3M", "+3M"], ["+2M", "+2M"], ["+1K", "+1K (a key)"], ["+1I", "+1I (income)"], ["", "nothing"]])),
       h("h3", {}, "Alternatives ", h("span", { class: "muted" }, "— candidates not adopted; see docs/alternatives.md")),
       h("div", { class: "grid" },
-        select("Map", "map", [["settled", "Settled: grows with the player count"], ["classic", "Classic 9×6, 3 harbours"], ["alt-12x11", "12×11 with three far hubs"]]),
+        select("Map", "map", [["settled", "The deep map: three bands, grows with the player count"], ["stage1", "Stage 1 (playtest-v1): two bands"], ["classic", "Classic 9×6, 3 harbours"], ["alt-12x11", "12×11 with three far hubs"]]),
         select("Network score", "networkScore", [["reach", "Reach (settled)"], ["crossings", "Crossings"]]),
         select("Income", "incomeMode", [["earn", "Earn pays your income (settled)"], ["round", "Passive, every round; Earn N = N money"]]),
         check("Dig anywhere (stranded ditches)", "connectionRequired", "Replaces the settled connection rule: a canal may be dug anywhere, and counts once something links it to the sea", true),
@@ -545,7 +546,8 @@ function finishedList() {
 function gameData(chosen = setup) {
   return {
     cards: data.cards, terrain: data.terrain,
-    hexes: chosen.map === "alt-12x11" && data.altHexes?.length ? data.altHexes
+    hexes: chosen.map === "stage1" && data.stage1Hexes?.length ? data.stage1Hexes
+      : chosen.map === "alt-12x11" && data.altHexes?.length ? data.altHexes
       : chosen.map === "classic" && data.classicHexes?.length ? data.classicHexes : data.hexes,
     buildings: data.buildings,
   };

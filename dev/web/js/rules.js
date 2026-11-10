@@ -45,10 +45,15 @@ export function rulesView(game, extra = {}) {
   const weighted = Object.keys(weights).length > 0;
   const w = (deck) => weights[deck] ?? 1;
   const split = !!c.inlandDisplay;
-  const ends = [c.endOnMarket ? "the market decks run out" : null, c.endOnKeys ? "every key tile is on the network" : null].filter(Boolean);
+  const ends = [c.endOnMarket ? "the market decks run out" : null, c.endOnKeys ? (c.endKeysBand ? `every key tile in the ${c.endKeysBand} is on the network` : "every key tile is on the network") : null].filter(Boolean);
   const endLine = ends.length
     ? `The game ends at the end of the round in which ${ends.join(", or ")} (after round ${c.rounds} at the latest)`
     : `The game ends after round ${c.rounds}`;
+
+  const bands = Object.values(game.board.hexes).some((hx) => hx.band === "highland");
+  const bandPts = String(c.reachBands || "").split(",").filter(Boolean).join(" / ") || String(c.vpPerReach);
+  const hasLakes = Object.values(game.board.hexes).some((hx) => terrain[hx.terrain].water && hx.band);
+  const hasCrags = Object.values(game.board.hexes).some((hx) => terrain[hx.terrain].wall);
 
   const sections = [
     ["goal", "The goal"], ["stuff", "What you have"], ["setup", "Setting up"], ["turn", "Your turn"],
@@ -159,6 +164,10 @@ export function rulesView(game, extra = {}) {
         glossaryItem("i-reach", "Corners.", "Canals run along hex borders and join only where they share a corner, like roads in Catan."),
         glossaryItem("m-key", "Key tiles.", `Build here for a key: ${c.vpPerKey} VP, times your Special cards.`),
         glossaryItem("m-discovery", "Discoveries.", "A one-off bonus, such as +2M. The dig that opens the hex takes it."),
+        bands ? glossaryItem("i-reach", "Three bands.", `The coast, the inland and the highland, each dearer to dig and build on (${cost("digCost")}). An opened hex is worth ${bandPts} Reach, coast / inland / highland.`) : null,
+        bands ? glossaryItem("i-dig", "The highland.", c.highlandNeedsBought ? "Only bought dig cards dig a border that touches the highland; starting cards can't." : "Dug like anywhere else, at its higher cost.") : null,
+        hasLakes ? glossaryItem("i-reach", "Lakes.", "Inland water. Once a linked canal reaches one of a lake's corners, all its corners are linked: a free junction to the far side.") : null,
+        hasCrags ? glossaryItem("i-dig", "Crags.", "A ridge before the highland: no building site, and no canal between two crags. Go through a pass.") : null,
         mats ? glossaryItem("m-forest", "Forests, mountains, clay beds.", "Sources of wood, stone and clay (see Resources).") : null),
       h("h3", {}, "Opening hexes: your Reach"),
       h("p", {}, "A land hex is ", h("b", {}, "opened"), " when a linked canal runs along one of its borders and the hex does not touch open water. ",

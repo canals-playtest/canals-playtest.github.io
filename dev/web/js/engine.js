@@ -80,7 +80,7 @@ export function edgeCorners(ek) {
 /** A corner where a harbour (any land, on a map without harbours) meets open water. */
 function isMouth(corner, hexes, terrain, harbourMap) {
   const hs = corner.split("/").map((k) => hexes[k]);
-  const wet = (h) => h && terrain[h.terrain].water;
+  const wet = (h) => h && terrain[h.terrain].water && !terrain[h.terrain].band;   // the sea, not a lake
   return hs.some(wet) && hs.some((h) => h && !wet(h) && (!harbourMap || h.harbour));
 }
 
@@ -101,10 +101,15 @@ export function buildBoard(hexRows, terrainRows, players = Infinity) {
   const terrain = {};
   for (const t of terrainRows) {
     if (!t.id) continue;
+    const water = truthy(t.water);
     terrain[t.id] = {
       id: t.id, name: t.name || t.id, fill: t.fill || "#ddd", ink: t.ink || "#333",
-      water: truthy(t.water), buildable: truthy(t.buildable),
+      water, buildable: truthy(t.buildable),
       digCost: Number(t.dig_cost) || 0, buildCost: Number(t.build_cost) || 0,
+      // Band (stage 2): coast, inland or highland; blank for the sea. Older
+      // terrain files have none: "inland" and "highland" are their own band.
+      band: (t.band || "").trim().toLowerCase() || (["inland", "highland"].includes(t.id) ? t.id : water ? "" : "coast"),
+      wall: truthy(t.wall),   // a crag: a border between two of these can't be dug
     };
   }
   const hexes = {};
@@ -121,9 +126,11 @@ export function buildBoard(hexRows, terrainRows, players = Infinity) {
     };
   }
   const water = (h) => terrain[h.terrain].water;
+  const sea = (h) => water(h) && !terrain[h.terrain].band;   // open water; a lake has a band
   const around = (h) => NEIGHBOURS.map(([dq, dr]) => hexes[hexKey(h.q + dq, h.r + dr)]).filter(Boolean);
+  for (const h of Object.values(hexes)) h.band = terrain[h.terrain].band;
   // Shore: land beside open water. Always reachable, so it never counts for Reach.
-  for (const h of Object.values(hexes)) h.shore = !water(h) && around(h).some(water);
+  for (const h of Object.values(hexes)) h.shore = !water(h) && around(h).some(sea);
   // Canals are dug on borders between two land hexes; the coastline itself is
   // not a canal. They join at corners, and the network starts at a harbour
   // mouth: a corner where a harbour meets open water. A map with no harbours
@@ -134,6 +141,7 @@ export function buildBoard(hexRows, terrainRows, players = Infinity) {
     if (water(h)) continue;
     for (const n of around(h)) {
       if (water(n)) continue;
+      if (terrain[h.terrain].wall && terrain[n.terrain].wall) continue;   // between two crags: no canal
       const k = edgeKey(h.key, n.key);
       if (edges[k]) continue;
       edges[k] = { key: k, a: h.key, b: n.key, cost: Math.max(terrain[h.terrain].digCost, terrain[n.terrain].digCost) };
@@ -148,8 +156,22 @@ export const isWater = (state, hk) => { const h = state.board.hexes[hk]; return 
 /** "inland" if the edge touches an inland hex (it costs inland prices), else "coastal". */
 export const edgeZone = (state, ek) => {
   const e = state.board.edges[ek];
-  return [e.a, e.b].some((k) => state.board.hexes[k]?.terrain === "inland") ? "inland" : "coastal";
+  return [e.a, e.b].some((k) => isInland(state, k)) ? "inland" : "coastal";
 };
+
+/** A hex's band: "coast", "inland", "highland", or "" for the sea. */
+export const bandOf = (state, hk) => state.board.hexes[hk]?.band ?? "";
+const isLake = (state, hk) => { const h = state.board.hexes[hk]; return !!h && state.board.terrain[h.terrain].water && !!h.band; };
+
+/** Reach points for an opened hex: by band (rule reachBands), else vpPerReach. */
+export function hexReach(state, hk) {
+  const bands = String(state.config.reachBands || "").split(",").map((x) => Number(x));
+  if (bands.length < 3 || bands.some(Number.isNaN)) return state.config.vpPerReach;
+  return bands[{ coast: 0, inland: 1, highland: 2 }[bandOf(state, hk)] ?? 0];
+}
+
+/** Does this edge touch the highland? */
+export const touchesHighland = (state, ek) => { const e = state.board.edges[ek]; return bandOf(state, e.a) === "highland" || bandOf(state, e.b) === "highland"; };
 
 /** Does this edge start at a harbour mouth, or share a corner with a linked canal? */
 export const extendsNetwork = (state, ek, link = linkedNetwork(state)) =>
@@ -168,13 +190,19 @@ export function assignHarbours(board, players) {
 
 /** Where player pi's starting cards may dig from: their harbour's mouths and their own sea-linked canals' corners. */
 export function ownCorners(state, pi, link = linkedNetwork(state)) {
+  const e = netEntry(state);
+  if (link === e.link) return ((e.own ||= {})[pi] ||= computeOwn(state, pi, link));
+  return computeOwn(state, pi, link);
+}
+
+function computeOwn(state, pi, link) {
   const hk = state.harbours?.[pi];
   const out = new Set(harbourMouths(state).filter((c) => c.split("/").includes(hk)));
   for (const [ek, o] of Object.entries(state.dug)) if (o === pi && link.edges.has(ek)) for (const c of edgeCorners(ek)) out.add(c);
   return out;
 }
 
-export const extendsOwn = (state, ek, pi) => { const own = ownCorners(state, pi); return edgeCorners(ek).some((c) => own.has(c)); };
+export const extendsOwn = (state, ek, pi) => { const own = ownCorners(state, pi, linkedNetwork(state)); return edgeCorners(ek).some((c) => own.has(c)); };
 
 /** Whether the card played this turn lets its diggers work away from the network here. */
 export const remoteDigAllowed = (state, ek) => {
@@ -234,7 +262,7 @@ export function buildingTypes(rows) {
   return types.length ? types : PLAIN_BUILDING;
 }
 
-const btype = (state, id) => state.buildingTypes.find((b) => b.id === id) || state.buildingTypes[0];
+export const btype = (state, id) => state.buildingTypes.find((b) => b.id === id) || state.buildingTypes[0];
 
 // --------------------------------------------------------------------------- //
 // Setup
@@ -344,7 +372,21 @@ export function createGame(data, config = {}) {
   return state;
 }
 
-function log(state, msg) { state.log.push({ round: state.round, msg }); }
+function log(state, msg) { if (!state.quiet) state.log.push({ round: state.round, msg }); }
+
+/**
+ * A copy for search (computer players' look-ahead): the mutable parts copied,
+ * the board, card definitions and rules shared, and no log or history. Pass
+ * `rng` to give the copy its own shuffles.
+ */
+export function cloneState(state, rng) {
+  const c = { ...state, quiet: true, log: [], history: [] };
+  const deep = structuredClone({ dug: state.dug, buildings: state.buildings, claimed: state.claimed, cubes: state.cubes,
+    supply: state.supply, crossings: state.crossings, players: state.players, market: state.market, trash: state.trash, turn: state.turn });
+  Object.assign(c, deep);
+  if (rng !== undefined) c.rng = (rng >>> 0) || 1;
+  return c;
+}
 
 export const def = (state, uid) => state.defs[state.cards[uid]];
 export const currentPlayer = (state) => state.players[state.current];
@@ -388,7 +430,8 @@ export const marketExhausted = (state) => !state.market.stack.length && !state.m
 
 /** Every key tile is on the sea-linked network. */
 export function keysConnected(state) {
-  const keys = Object.keys(state.board.hexes).filter((hk) => state.board.hexes[hk].isKey);
+  const band = state.config.endKeysBand || "";
+  const keys = Object.keys(state.board.hexes).filter((hk) => state.board.hexes[hk].isKey && (!band || bandOf(state, hk) === band));
   if (!keys.length) return false;
   const net = networkHexes(state, linkedNetwork(state));
   return keys.every((hk) => net.has(hk));
@@ -470,6 +513,7 @@ export function playCard(state, uid, discardUids = []) {
   t.digAnywhere = d.digAnywhere || "";
   // Own harbours: a starting card's digs extend only its player's own canals.
   t.ownOnly = state.harbours?.length && d.deck === "starting" ? state.current : -1;
+  t.starter = d.deck === "starting";
   t.discards = discardUids;
   t.pool = NEW_POOL();
   const fx = resolveEffects(d, discardUids.length);
@@ -487,24 +531,51 @@ export function playCard(state, uid, discardUids = []) {
  * every dug canal sharing a corner with one already linked. Returns the linked
  * edges and the corners the network reaches, mouths included.
  */
+// The network depends only on which edges are dug (never undug), so it is
+// cached per `dug` object and its size. Clones get their own `dug` object.
+const NET_CACHE = new WeakMap();
+function netEntry(state) {
+  const n = Object.keys(state.dug).length;
+  let e = NET_CACHE.get(state.dug);
+  if (!e || e.n !== n) { e = { n, link: null, net: null }; NET_CACHE.set(state.dug, e); }
+  return e;
+}
+
 export function linkedNetwork(state) {
+  const e = netEntry(state);
+  return e.link ||= computeLinked(state);
+}
+
+function computeLinked(state) {
   const byCorner = {};
   for (const ek of Object.keys(state.dug)) for (const c of edgeCorners(ek)) (byCorner[c] ||= []).push(ek);
   const edges = new Set(), corners = new Set(harbourMouths(state));
   const queue = Object.keys(state.dug).filter((ek) => edgeCorners(ek).some((c) => corners.has(c)));
   queue.forEach((ek) => edges.add(ek));
-  while (queue.length) {
-    for (const c of edgeCorners(queue.shift())) {
-      if (corners.has(c)) continue;
-      corners.add(c);
-      for (const n of byCorner[c] || []) if (!edges.has(n)) { edges.add(n); queue.push(n); }
-    }
-  }
+  // A lake: once a linked canal reaches one of its corners, all its corners are linked.
+  const lakeCorners = {};
+  for (const hk of Object.keys(state.board.hexes)) if (isLake(state, hk)) lakeCorners[hk] = hexCorners(hk);
+  const lakes = Object.keys(lakeCorners).length > 0;
+  const reach = (c) => {
+    if (corners.has(c)) return;
+    corners.add(c);
+    for (const n of byCorner[c] || []) if (!edges.has(n)) { edges.add(n); queue.push(n); }
+    if (lakes) for (const hk of c.split("/")) if (lakeCorners[hk]) for (const lc of lakeCorners[hk]) reach(lc);
+  };
+  // Mouths are linked from the start; a lake touching one links too.
+  for (const c of [...corners]) { corners.delete(c); reach(c); }
+  while (queue.length) for (const c of edgeCorners(queue.shift())) reach(c);
   return { edges, corners };
 }
 
 /** Hexes on the navigable network: water, and every hex bordered by a linked canal. */
 export function networkHexes(state, link = linkedNetwork(state)) {
+  const e = netEntry(state);
+  if (link === e.link) return e.net ||= computeNet(state, link);
+  return computeNet(state, link);
+}
+
+function computeNet(state, link) {
   const seen = new Set(Object.keys(state.board.hexes).filter((k) => isWater(state, k)));
   for (const ek of link.edges) { const e = state.board.edges[ek]; seen.add(e.a); seen.add(e.b); }
   return seen;
@@ -520,7 +591,8 @@ export const isOpened = (state, hk, net = networkHexes(state)) =>
 // stay out of the market. As sim/rules.py.
 // --------------------------------------------------------------------------- //
 
-const isInland = (state, hk) => state.board.hexes[hk]?.terrain === "inland";
+// Beyond the coast: the inland band, and the highland past it (stage 2 map).
+export const isInland = (state, hk) => { const b = state.board.hexes[hk]?.band; return b === "inland" || b === "highland"; };
 /** Is the inland closed to digging and building? Only a counted milestone
  * gates them; under "open" only the cards wait, as in the earlier rule. */
 export const inlandClosed = (state) => !state.inlandOpen && ["canals", "keys"].includes(state.config.inlandMilestone);
@@ -587,6 +659,7 @@ export function canDig(state, ek) {
   if (t.phase !== "resolve" || (t.pool.dig || 0) < 1) return fail("no dig available");
   if (state.dug[ek] !== undefined) return fail("already dug");
   if (inlandClosed(state) && isDeep(state, ek)) return fail("inland on both sides: closed until the inland milestone");
+  if (state.config.highlandNeedsBought && t.starter && touchesHighland(state, ek)) return fail("a starting card can't dig in the highland: only bought dig cards reach it");
   if (state.config.connectionRequired && t.ownOnly >= 0 && state.harbours?.length) {
     if (!extendsOwn(state, ek, t.ownOnly)) return fail("a starting card digs only from your own harbour or your own canals");
   } else if (state.config.connectionRequired && !extendsNetwork(state, ek) && !remoteDigAllowed(state, ek)) {
@@ -765,7 +838,8 @@ export function builtCount(state, pi, typeId) {
   return Object.values(state.buildings).flat().filter((b) => b.p === pi && b.type === typeId).length;
 }
 
-export function canBuild(state, hk, typeId) {
+/** `haul` (from hauls()) prices many sites at once, as buildPrice. */
+export function canBuild(state, hk, typeId, haul = undefined) {
   const t = state.turn, p = currentPlayer(state), h = state.board.hexes[hk];
   const bt = btype(state, typeId);
   if (!h) return fail("no such hex");
@@ -778,7 +852,7 @@ export function canBuild(state, hk, typeId) {
   if (bt.site && h.material !== bt.site) return fail(`a ${bt.name} goes only on a ${TERRAIN_WORD[bt.site]}`);
   if (canalsAround(state, hk) < bt.minCanals) return fail(`${bt.name} needs ${bt.minCanals}+ canals around it`);
   if (bt.supply && builtCount(state, state.current, bt.id) >= bt.supply) return fail(`no ${bt.name} left in your supply`);
-  const price = buildPrice(state, hk, bt.id);
+  const price = buildPrice(state, hk, bt.id, state.current, haul);
   if (!price.ok) return fail(`no ${bt.needs.join(" or ")} can reach this site`);
   if (p.money < price.total) return fail("not enough money");
   return OK;
@@ -1007,7 +1081,7 @@ export function endTurn(state) {
       log(state, `${p.name} takes ${got === 1 ? "a pearl" : `${got} pearls`} from ${displayName(def(state, t.played))} (${p.pearls}).`);
     }
   }
-  state.history.push({
+  if (!state.quiet) state.history.push({
     round: state.round, player: state.current, card: t.played ? state.cards[t.played] : null,
     discards: t.discards.length, actions: t.actions, unused: Object.fromEntries(
       Object.entries(t.pool).filter(([k, v]) => v > 0 && ["dig", "build", "buy"].includes(k))),
@@ -1123,6 +1197,19 @@ export function reach(state, pi, net = networkHexes(state), link = linkedNetwork
   return [...touched].filter((hk) => isOpened(state, hk, net)).length;
 }
 
+/** Reach in points: each opened hex your linked canals touch, at its band's value (hexReach). */
+export function reachPoints(state, pi, net = networkHexes(state), link = linkedNetwork(state)) {
+  const touched = new Set();
+  for (const [ek, o] of Object.entries(state.dug)) {
+    if (o !== pi || !link.edges.has(ek)) continue;
+    const e = state.board.edges[ek];
+    touched.add(e.a); touched.add(e.b);
+  }
+  let pts = 0;
+  for (const hk of touched) if (isOpened(state, hk, net)) pts += hexReach(state, hk);
+  return pts;
+}
+
 export function score(state, pi) {
   const p = state.players[pi];
   const cfg = state.config;
@@ -1138,7 +1225,7 @@ export function score(state, pi) {
   }
   const network = cfg.networkScore === "crossings"
     ? { score: "Crossings", s: state.crossings.reduce((a, c) => a + c.edges.filter((ek) => state.dug[ek] === pi).length, 0) }
-    : { score: "Reach", s: reach(state, pi) * cfg.vpPerReach };
+    : { score: "Reach", s: reachPoints(state, pi) };
 
   const lanes = [
     { mult: "dig", m: m("dig"), score: "Buildings", s: buildingScore },

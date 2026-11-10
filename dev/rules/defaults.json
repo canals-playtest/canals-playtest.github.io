@@ -57,6 +57,18 @@
       "value": true, "status": "assumed",
       "note": "Each player is assigned a harbour at setup (spread along the coast, in seat order). Starting dig cards may only start at your own harbour's mouth or share a corner with one of your own sea-linked canals; market dig cards may join anyone's network, as all digs did up to playtest-v1. docs/next-version.md section 5"
     },
+    "reachBands": {
+      "value": "1,2,3", "status": "assumed",
+      "note": "Reach points for an opened hex by band: coast, inland, highland (terrain.csv `band`). Blank: every hex scores vpPerReach, as up to stage 1. docs/next-version.md section 3"
+    },
+    "highlandNeedsBought": {
+      "value": true, "status": "assumed",
+      "note": "Starting dig cards may not dig a border touching the highland: only bought dig cards reach it. docs/brainstorm-stage-2-3.md 3.3"
+    },
+    "endKeysBand": {
+      "value": "highland", "status": "assumed",
+      "note": "Which key tiles endOnKeys counts: \"highland\" (only the highland villages) or blank (all of them). On the deep map the inland villages are linked long before the far ones. docs/brainstorm-stage-2-3.md 3.6"
+    },
     "cardWeights": {
       "value": "starting=0,coastal=1,inland=2", "status": "assumed",
       "note": "How much each card counts toward its colour's multiplier, by deck (coastal-2 counts as coastal): starting cards don't count, so trashing them costs no points. Was 1 for every card up to playtest-v1. docs/scoring.md"
