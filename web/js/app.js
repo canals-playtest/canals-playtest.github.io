@@ -9,6 +9,7 @@ import { installSprites, icon, crest, ROLE_ICON, hasSymbol } from "./sprites.js"
 import { showRules } from "./rules.js";
 import { applyCommand } from "./commands.js";
 import { hostTable, joinTable, makeCode, cleanCode, shareLink } from "./net.js";
+import { submitReport, flushReports, sharing, setSharing, reportingAvailable, siteVersion } from "./reports.js";
 
 const $ = (sel) => document.querySelector(sel);
 const app = $("#app");
@@ -384,8 +385,27 @@ function renderSetup() {
           h("thead", {}, h("tr", {}, ["Card", "id", "Effect", "Cost", "VP", "Start", "Market"].map((t) => h("th", {}, t)))),
           h("tbody", {}, list.map(deckRow)))))),
 
-    h("div", { class: "start" }, h("button", { class: "primary", onclick: startGame }, "Start game"))));
+    h("div", { class: "start" }, shareSwitch(), h("button", { class: "primary", onclick: startGame }, "Start game"))));
   pushLobby();
+}
+
+/** "Share finished games with the designer", shown only where reporting is set up. */
+function shareSwitch() {
+  const slot = h("span", { class: "share-switch" });
+  reportingAvailable().then((on) => {
+    if (!on) return;
+    slot.replaceChildren(h("label", { class: "row", title: "Each finished game's report (settings, scores, decks, turn history and log, with the players' names) goes to the designer for playtest analysis." },
+      h("input", { type: "checkbox", checked: sharing() || null, onchange: (e) => { setSharing(e.target.checked); if (e.target.checked) flushReports(); } }),
+      h("span", {}, "Share finished games with the designer")));
+  });
+  return slot;
+}
+
+/** For guests: the host's device sends the report. */
+function shareNotice() {
+  const slot = h("p", { class: "hint" });
+  reportingAvailable().then((on) => { if (on) slot.textContent = "Finished games are sent to the designer for playtest analysis (by the host's device, with the players' names)."; });
+  return slot;
 }
 
 let refreshSeats = () => {};   // redraws the setup screen's Players section
@@ -570,8 +590,21 @@ function afterMove(ended) {
   if (ended) { undo = []; sel = { play: null, discards: new Set() }; redrawing = false; }
   persist();
   pushState();
-  if (state.over) { store.del("canals.game"); keepFinished(state); return renderEnd(); }
+  if (state.over) { store.del("canals.game"); keepFinished(state); sendReport(); return renderEnd(); }
   renderGame(ended);
+}
+
+/**
+ * Send the finished game's report to the designer (reports.js), once per game.
+ * Online, only the host sends it.
+ */
+async function sendReport() {
+  if (net.role === "guest" || !state?.over || state.reportId) return;
+  state.reportId = makeCode(10);
+  keepFinished(state);                      // remember it was sent, with its id
+  const rep = { ...report(), site: await siteVersion() };
+  const res = await submitReport(rep);
+  if (res.sent) toast("Game report sent to the designer. Thank you!");
 }
 
 function toast(msg) {
@@ -1153,6 +1186,7 @@ function renderJoin(code) {
       h("p", {}, "You've been invited to an online game. Pick a name the others will see."),
       h("div", { class: "row wrap" }, name, h("button", { class: "primary", onclick: go }, "Join the table")),
       h("p", { class: "hint" }, "New to the game? Read ", h("a", { href: "#rules", onclick: (e) => { e.preventDefault(); openRules(); } }, "How to play"), " while you wait."),
+      shareNotice(),
       h("div", { class: "row" }, h("button", { class: "ghost", onclick: () => { history.replaceState(null, "", location.pathname + location.search); renderSetup(); } }, "Back")))));
   name.focus();
 }
@@ -1233,7 +1267,9 @@ function renderGuestLobby() {
 
 function report() {
   return {
+    id: state.reportId || null,
     finishedAt: state.finishedAt ? new Date(state.finishedAt).toISOString() : null,
+    mode: state.players.some((p) => p.remote) ? "online" : "local",
     config: state.config,
     rounds: state.round,
     endedByCrossing: state.crossings.length > 0,
@@ -1242,7 +1278,10 @@ function report() {
       const sc = E.score(state, i);
       const deck = {};
       for (const uid of E.ownedCards(p)) deck[state.cards[uid]] = (deck[state.cards[uid]] || 0) + 1;
-      return { name: p.name, seat: p.ai || "human", total: sc.total, money: p.money, income: p.income, reach: E.reach(state, i), keys: p.keys,
+      // seat: "human" (on the playing device), "online", a computer ("greedy", "random"),
+      // or "online, computer covered" for an online seat the computer finished.
+      const seat = p.takenOver ? "online, computer covered" : p.ai || (p.remote ? "online" : "human");
+      return { name: p.name, seat, total: sc.total, money: p.money, income: p.income, reach: E.reach(state, i), keys: p.keys,
         lanes: sc.lanes, colourCounts: sc.counts, deck, stats: p.stats };
     }),
     history: state.history,
@@ -1298,6 +1337,7 @@ function renderEnd() {
     setData(await loadRepoData());
     const joining = location.hash.match(/^#join=([A-Za-z0-9]+)/);
     if (joining) renderJoin(cleanCode(joining[1])); else renderSetup();
+    flushReports();   // anything a previous visit couldn't send
     if (location.hash === "#rules") openRules();
     addEventListener("hashchange", () => { if (location.hash === "#rules" && !document.querySelector(".rules-overlay")) openRules(); });
   } catch (err) {

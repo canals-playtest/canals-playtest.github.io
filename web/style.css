@@ -328,3 +328,6 @@ input.code-input { width: 7.5rem; text-transform: uppercase; letter-spacing: .1e
 .lobby-seat.you { border-color: var(--accent); }
 .lobby-seat svg.crest { width: 1.8em; height: 1.8em; }
 .lobby a, .online-panel a { color: var(--accent); }
+.start { align-items: center; flex-wrap: wrap; }
+.share-switch { margin-right: auto; color: var(--muted); font-size: .9rem; }
+.share-switch input { margin: 0 .35rem 0 0; }
