@@ -1,0 +1,52 @@
+q,r,terrain,region,key,harbour,bonus,material,slots,label,notes
+0,0,sea,,,,,,,,
+1,0,sea,,,,,,,,
+2,0,sea,,,,,,,,
+3,0,sea,,,,,,,,
+4,0,sea,,,,,,,,
+5,0,sea,,,,,,,,
+6,0,sea,,,,,,,,
+7,0,sea,,,,,,,,
+8,0,sea,,,,,,,,
+0,1,sea,,,,,,,,
+1,1,sea,,,,,,,,
+2,1,coastal,,,TRUE,,,1,,
+3,1,coastal,,,,,,0,,
+4,1,sea,,,,,,,,
+5,1,coastal,,,TRUE,,,1,,
+6,1,coastal,,,,,,0,,
+7,1,coastal,,,TRUE,,,1,,
+8,1,sea,,,,,,,,
+-1,2,sea,,,,,,,,
+0,2,coastal,,,,,,0,,
+1,2,coastal,,,,,,0,,
+2,2,coastal,,,,,,1,,
+3,2,coastal,,,,,,0,,
+4,2,coastal,,,,,,0,,
+5,2,coastal,,,,,,1,,
+6,2,coastal,,,,,,1,,
+7,2,coastal,,,,,,0,,
+-1,3,sea,,,,,,,,
+0,3,coastal,,,,,,0,,
+1,3,inland,,TRUE,,,,1,,PLACEHOLDER key tile
+2,3,inland,,,,+2M,,1,,
+3,3,inland,,,,,,1,,
+4,3,inland,,TRUE,,,,1,,PLACEHOLDER key tile
+5,3,inland,,,,,wood,1,,
+6,3,inland,,,,1T,,1,,
+7,3,inland,,TRUE,,,,1,,PLACEHOLDER key tile
+-1,4,sea,,,,,,,,
+0,4,coastal,,,,,,0,,
+1,4,inland,,,,+1D,,1,,
+2,4,inland,,TRUE,,,,1,,PLACEHOLDER key tile
+3,4,inland,,,,,,1,,
+4,4,inland,,,,+1C,,1,,
+5,4,inland,,TRUE,,,,1,,PLACEHOLDER key tile
+6,4,inland,,,,+1I,,1,,
+0,5,inland,,TRUE,,,,1,,PLACEHOLDER key tile
+1,5,inland,,,,+3M,,1,,
+2,5,inland,,,,,wood,1,,
+3,5,inland,,TRUE,,+1S,,1,,PLACEHOLDER key tile
+4,5,inland,,,,,stone,1,,
+5,5,inland,,,,+1H,,1,,
+6,5,inland,,TRUE,,,,1,,PLACEHOLDER key tile

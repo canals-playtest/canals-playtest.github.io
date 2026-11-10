@@ -1,0 +1,29 @@
+id,deck,name,role,base,boost_cost,boost,cost,vp,copies,dig_anywhere,flavour,notes
+start-buy-1,starting,Hermit Crab,Buy,Buy 1,D2,-1CC,,,4,,Always shopping for a better shell.,Efficiency flavour of the starting Buy pair
+start-buy-2,starting,Seal,Buy,Buy 1,D2,+1C,,,4,,Charms the folk on the beach.,Tempo flavour of the starting Buy pair
+start-dig-1,starting,Crayfish,Dig,Dig 1,D2,-1DC,,,4,,Burrows into the bank.,Efficiency flavour of the starting Dig pair
+start-dig-2,starting,Otter,Dig,Dig 1,D2,+1D,,,4,,Never digs just one hole.,Tempo flavour of the starting Dig pair
+start-build-1,starting,Water Vole,Build,Build 1,D,-1BC/D,,,4,,Every bank is a home.,Only starting card using the scalar boost idiom
+start-earn-1,starting,Oyster,Earn,Earn 1,D2,+1M,,,4,,"Grows a pearl, slowly.",Earn 1 takes income; track starts at 2
+c-dig-1,coastal,Rabbit,Dig,Dig 1,D,-1DC/D,2,,4,coastal,Shallow work but quick.,Workhorse coastal dig
+c-dig-2,coastal,Earthworm,Dig,Dig 1,D2,+1D,3,,3,coastal,Tireless in soft ground.,
+c-bld-1,coastal,Swallow,Build,Build 1,D,-1BC/D,2,,3,,Builds in mud and spit.,
+c-bld-2,coastal,Mason Bee,Build,Build 1,XD,+1B,3,,2,,Trades spadework for mortar.,Colour-keyed boost - teaches the XD idiom
+c-buy-1,coastal,Jackdaw,Buy,Buy 1,D,-1CC/D,2,,3,,Haggles over everything.,
+c-buy-2,coastal,Magpie,Buy,Buy 1,D2,+1C,3,,2,,Cannot leave a bargain.,"Was 2 with 3 copies while Reach scored 1 a hex; at 2 a hex, cheap buy cards tipped play to Reach"
+c-ern-1,coastal,Harvest Mouse,Earn,Earn 1,D1,+1M,1,,4,,Small wages paid daily.,Cheapest card in the game - Yellow scores nothing so it may price below the curve
+c-ern-2,coastal,Dormouse,Earn,Earn 1,D2,+1I,2,,3,,Thinks about next winter.,Income investment
+c-ern-3,coastal,Honeybee,Earn,Earn 1,D,+1M/D,2,,2,,Paid by the trip.,
+c-spc-1,coastal,Kestrel,Special,Dig 1. +1H,D2,-1DC,4,3,2,coastal,Sees the lie of the land.,Broad network utility - never key-targeted
+c-spc-2,coastal,Jay,Special,Buy 1. 1T,D2,+1M,4,3,2,,Buries what it does not need.,
+i-dig-1,inland,Mole,Dig,Dig 1. -1DC,D2,+1D,4,,3,inland,Born to the dark.,
+i-dig-2,inland,Badger,Dig,Dig 1,D2,+2D,5,,2,inland,Moves earth by the ton.,
+i-dig-3,inland,Boar,Dig,Dig 1,XE,+1D,3,,2,inland,Will root all day for a wage.,Colour-keyed - turns surplus Yellow into digging
+i-bld-1,inland,Beaver,Build,Build 1. -1BC,D2,+1B,4,,3,,Fells timber before breakfast.,
+i-bld-2,inland,Termite,Build,Build 1,D2,+2B,5,,2,,Thousands of tiny hands.,
+i-buy-1,inland,Raven,Buy,Buy 1. -1CC,XB,+1C,4,,2,,Knows what a thing is worth.,Colour-keyed. Was 3 while Reach scored 1 a hex
+i-buy-2,inland,Squirrel,Buy,Buy 1,D2,+2C,5,,2,,Stockpiles against the season.,Was 4 with 3 copies while Reach scored 1 a hex
+i-ern-1,inland,Hamster,Earn,Earn 1. +1I,D2,+2M,3,,3,,Never spends the last coin.,Only inland Earn - income should be built early
+i-spc-1,inland,Owl,Special,+1S,D3,+2M,7,5,1,,Keeps counsel and keeps watch.,Only +1S in the market; the other is a discovery on the board. Highest leverage card in the game
+i-spc-2,inland,Fox,Special,Dig 1. 1T,D2,+1D,5,4,1,any,Takes the shortest way.,
+i-spc-3,inland,Stag,Special,Build 1. +1H,D2,+1B,5,4,2,,Walks where the maps end.,

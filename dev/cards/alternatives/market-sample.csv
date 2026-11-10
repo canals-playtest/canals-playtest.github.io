@@ -1,0 +1,24 @@
+id,deck,name,role,base,boost_cost,boost,cost,vp,copies,flavour,notes
+c-rabbit,coastal,Rabbit,Dig,Dig 1,D,-1DC/D,2,,3,Many paws make light burrows.,Entry digger. Two discards make a coastal dig free.
+c-badger,coastal,Badger,Dig,Dig 1. -1DC,D,+1M/D,3,,2,,Digger that funds its own boost.
+c-vole,coastal,Water vole,Dig,Dig 1. Build 1,D,-1DC/D,4,,2,"Digs the burrow, then moves in.",Two-action card: puts a building where the canal just went.
+c-beaver,coastal,Beaver,Build,Build 1. -1BC,D,-1BC/D,3,,3,Builds cheaply. Obviously.,Entry builder.
+c-goat,coastal,Goat,Build,Build 1,D,+1M/D,3,,2,Eats the scaffolding budget and still finishes.,Builder that funds itself.
+c-magpie,coastal,Magpie,Buy,Buy 1,D,-1CC/D,2,,3,Collects anything shiny.,Entry buyer.
+c-fox,coastal,Fox,Buy,Buy 1. 1T,D,-1CC/D,3,,2,,Buyer that thins the deck (design-review section 7).
+c-squirrel,coastal,Squirrel,Earn,Earn 2,D,+1M/D,1,,4,Hoards now; forgets where later.,Cheap no-VP tempo (design-review section 2). Buy early and trash later.
+c-hedgehog,coastal,Hedgehog,Earn,Earn 2. 1TD,D,+1M/D,2,,2,,Earn plus trash: the natural way to cut Yellow later.
+c-bee,coastal,Bee,Earn,Earn 1. +1I,D,+1M/D,5,,2,Slow honey.,Only income source. Priced up because each play is permanent (income pays per round).
+c-crow,coastal,Crow,Special,Dig 1. Buy 1,D,-1DC/D,6,2,1,Scouts the route from above.,Broad utility; never builds or grabs keys (scoring.md).
+c-dog,coastal,Dog,Special,Buy 1. -1CC,D,+1M/D,6,2,1,,Broad utility special that pays for itself.
+i-mole,inland,Mole,Dig,Dig 1. -2DC,D,-1DC/D,4,,3,Tunnels where others can't.,Inland specialist: an inland dig costs 2 (0 with two discards).
+i-boar,inland,Boar,Dig,Dig 1. +1D,D,-1DC/D,5,,2,,Two digs from one card; money still gates the second.
+i-ox,inland,Ox,Build,Build 1. -2BC,D,-1BC/D,5,,2,,Inland builder: an inland build costs 3 (1 with two discards).
+i-ant,inland,Ant,Build,Build 1. -1BC,D,+1M/D,5,,2,,Inland builder that funds itself.
+i-horse,inland,Horse,Buy,Buy 1. +2M,D2,+1C,4,,2,,Buyer that brings its own money.
+i-deer,inland,Deer,Earn,Earn 3,D,+1M/D,4,,3,,Strong tempo. Still no VP.
+i-owl,inland,Owl,Special,Dig 1. -2DC,D,+1M/D,8,3,1,,Inland dig utility.
+i-stag,inland,Stag,Special,Dig 1. Buy 1. -1DC,D,-1CC/D,8,3,1,,Utility on both sides. No build (scoring.md constraint).
+i-tortoise,inland,Tortoise,Special,Earn 2,D2,1T,7,4,1,Has seen every canal ever dug.,VP carrier: weak effect and high VP feeds the Build x deck-VP lane.
+i-elephant,inland,Elephant,Special,+1S,D,+1M/D,8,2,1,Never forgets a face.,+1S priced as the rarest card in the market (design-review section 4).
+i-meerkat,inland,Meerkat,Build,Build 1,D2,+1K,5,,2,Always on lookout duty.,Feeds the Special x keys lane without a special touching keys (scoring.md).

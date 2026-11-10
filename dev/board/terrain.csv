@@ -1,0 +1,4 @@
+id,name,fill,ink,water,buildable,dig_cost,build_cost,notes
+sea,Open water,#a8cddf,#2b5468,TRUE,FALSE,,,Navigable already; canals reach the map from here at a harbour
+coastal,Coastal,#e6d9bd,#6b5a35,FALSE,TRUE,1,1,Cost zone is drawn not derived; see docs/map-and-network.md
+inland,Inland,#c3d3ab,#4b5c34,FALSE,TRUE,2,2,Costs derived from the economy calibration in docs/economy.md

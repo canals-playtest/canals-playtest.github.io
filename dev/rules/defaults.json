@@ -1,0 +1,137 @@
+{
+  "_about": [
+    "The one copy of every rule number. Read by sim/rules.py (the Python simulator)",
+    "and web/js/engine.js (the browser table and JS bots); neither holds its own.",
+    "Names are camelCase; Python uses the snake_case form of the same name",
+    "(startingPurse -> starting_purse). Change a value here and both engines follow.",
+    "Run `python3 tools/check_rules.py` after adding or renaming a rule.",
+    "",
+    "status:",
+    "  settled     decided in the design docs",
+    "  assumed     a working value for something still open; the note says which question",
+    "  alternative a candidate kept off by default (docs/alternatives.md); only the web",
+    "              engine implements these, and the Python simulator refuses non-defaults"
+  ],
+  "rules": {
+    "handSize": {
+      "value": 3, "status": "settled",
+      "note": "Starting hand size. docs/core-loop.md"
+    },
+    "startingPurse": {
+      "value": 5, "status": "settled",
+      "note": "Money each player starts with. docs/economy.md"
+    },
+    "startingIncome": {
+      "value": 2, "status": "settled",
+      "note": "Starting position on the income track; Earn pays this. docs/economy.md"
+    },
+    "incomePerBuilding": {
+      "value": 1, "status": "settled",
+      "note": "Income gained per building placed. Raised from 1 to 2 after early simulation; back to 1 once resources, pearls and the bigger board pushed final income to 13 against a target of ~8. docs/economy.md, docs/simulation.md"
+    },
+    "displaySize": {
+      "value": 5, "status": "assumed",
+      "note": "Face-up market cards. Market structure is open question 10; docs/cards.md"
+    },
+    "rounds": {
+      "value": 25, "status": "assumed",
+      "note": "Turns per player. No game-end trigger is settled (open question 7)"
+    },
+    "vpPerBuilding": {
+      "value": 2, "status": "assumed",
+      "note": "Building score per building. Calibration table in docs/scoring.md"
+    },
+    "vpPerKey": {
+      "value": 6, "status": "assumed",
+      "note": "Key score per key token. Raised from 4 after simulation; docs/simulation.md"
+    },
+    "vpPerReach": {
+      "value": 2, "status": "assumed",
+      "note": "Reach score per opened hex. Raised from 1: buy x Reach was the weak lane in tournaments and the first league. docs/scoring.md, docs/simulation.md"
+    },
+    "handSizeCap": {
+      "value": 5, "status": "assumed",
+      "note": "Maximum hand size after +1S. Open question 11"
+    },
+    "buildNeedsNetwork": {
+      "value": true, "status": "assumed",
+      "note": "A building may only go on a hex that is on the canal network. docs/map-and-network.md"
+    },
+    "inlandMilestone": {
+      "value": "canals", "status": "assumed",
+      "note": "What opens the inland: \"canals\": inlandMilestonePerPlayer x players (rounded down) sea-linked canals bordering inland hexes, anyone's; \"keys\": that many key tiles on the network. Until then no canal may have inland on both sides, nothing is built inland, and the inland cards stay out of the market. \"open\": the first opened inland hex (the earlier rule); \"none\": open from the start. docs/map-and-network.md, open question 10"
+    },
+    "milestoneReward": {
+      "value": "+1C", "status": "assumed",
+      "note": "First-mover reward (docs/source-notes.md): the player whose dig reaches the inland milestone takes this, resolved like a discovery: +1C is one extra buy that turn, just as the inland cards arrive. It was +3M, which mostly went to digger and tipped the field. A notation code; blank for none. docs/map-and-network.md"
+    },
+    "inlandMilestonePerPlayer": {
+      "value": 1.5, "status": "assumed",
+      "note": "The inlandMilestone threshold per player, rounded down: 3 at two players, 4 at three, 6 at four, 7 at five. Per player because fewer players dig fewer canals; 6 at four players opens the inland around round 14 of 25. docs/simulation.md"
+    },
+    "materials": {
+      "value": true, "status": "assumed",
+      "note": "Resources as Brass-style cubes on the board (docs/resources.md): extractors put cubes on their hex, building types need resources, and each comes from the cheapest connected source or the import market, paying haul along linked canals plus a price. false: no resources, a build pays only its site. Open question 38"
+    },
+    "haulPerEdge": {
+      "value": 1, "status": "assumed",
+      "note": "Money per canal edge to haul a cube from its source (extractor, harbour or hub) to the building site. Open question 38"
+    },
+    "marketTrack": {
+      "value": "1,1,2,2,3,3,4,4", "status": "assumed",
+      "note": "The import market for each resource: cube prices, cheapest sold first, so the price rises as the market empties. Open question 38; docs/resources.md"
+    },
+    "marketEmptyPrice": {
+      "value": 5, "status": "assumed",
+      "note": "The price of an import cube once that resource's market is empty: the market never runs dry, it just gets dear. Open question 38"
+    },
+    "extractionFee": {
+      "value": 1, "status": "assumed",
+      "note": "Paid to an extractor's owner per cube taken from it, and to a Transport hub's owner per import through it; free from your own. Discounts never reduce it. Open question 38"
+    },
+    "buildingTypes": {
+      "value": true, "status": "assumed",
+      "note": "Choose a building type when you build, from board/buildings.csv (nine types). false: every building is the plain one, and any building on a forest or mountain is its camp. Open question 39; docs/buildings.md"
+    },
+    "pearls": {
+      "value": true, "status": "assumed",
+      "note": "A bonus for keeping cards (docs/core-loop.md): end a turn without having discarded and take a pearl. Pearls are spent on your turn from a small menu: pearlMoney money, a redraw, or (pearlActionCost pearls) one more action of the played card's kind. Open question 40"
+    },
+    "pearlCap": {
+      "value": 3, "status": "assumed",
+      "note": "Most pearls a player may hold. Open question 40"
+    },
+    "pearlMoney": {
+      "value": 2, "status": "assumed",
+      "note": "Money for one pearl. Open question 40"
+    },
+    "pearlActionCost": {
+      "value": 2, "status": "assumed",
+      "note": "Pearls for one more dig, build or buy (the played card's kind), at full cost. Open question 40"
+    },
+    "multiplierCap": {
+      "value": 0, "status": "assumed",
+      "note": "Cap on each colour-count multiplier; 0 is uncapped. Open question 9"
+    },
+    "incomeMode": {
+      "value": "earn", "status": "alternative",
+      "note": "\"earn\": Earn pays your income (settled). \"round\": passive income each round, rejected in docs/economy.md"
+    },
+    "connectionRequired": {
+      "value": true, "status": "settled",
+      "note": "A new canal must extend the sea-connected network, like a road in Catan: start at a harbour mouth, or share a corner with a canal already linked to the sea (anyone's). false: dig anywhere, and a stranded ditch counts once something links it"
+    },
+    "networkScore": {
+      "value": "reach", "status": "alternative",
+      "note": "\"reach\" (settled) or \"crossings\""
+    },
+    "endOnCrossing": {
+      "value": false, "status": "alternative",
+      "note": "The first completed crossing ends the game after that round"
+    },
+    "autoKeyTiles": {
+      "value": 0, "status": "alternative",
+      "note": "Place this many random key tiles if the map has none"
+    }
+  }
+}
