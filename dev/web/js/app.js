@@ -166,12 +166,12 @@ function setData(d) {
 
 // Bumped when a default changes, so a setup saved in this browser earlier
 // picks up the new value instead of silently keeping the old one.
-const SETUP_VERSION = 7;
+const SETUP_VERSION = 8;
 // The connection rule became settled (2); building types became the working rule (3);
 // the inland milestone replaced the first-opened-hex unlock (4); the game ends by
 // trigger, with rounds a cap, and the pearl track came in (6).
 const RESET_AT = { 2: ["connectionRequired"], 3: ["buildingTypes"], 4: ["inlandMilestone"], 5: ["milestoneReward"],
-  6: ["rounds", "pearlEarning", "pearlCap", "vpPerReach"], 7: ["marketClock"] };
+  6: ["rounds", "pearlEarning", "pearlCap", "vpPerReach"], 7: ["marketClock"], 8: ["ownHarbours"] };
 
 const END_REASON = { market: "the market decks ran out", keys: "every key tile reached the network",
   crossing: "ended by the first crossing", cap: "reached the round cap" };
@@ -345,6 +345,7 @@ function renderSetup() {
         check("The game ends when the market decks run out", "endOnMarket", "At the end of that round"),
         check("The game ends when every key tile is on the network", "endOnKeys", "At the end of that round"),
         select("Market clock (end of each round)", "marketClock", [["unbought", "the oldest card leaves a display nobody bought from"], ["always", "the oldest card leaves every display"], ["off", "off"]]),
+        check("Own harbours", "ownHarbours", "Each player has a harbour; starting dig cards dig only from it or along your own canals"),
         check("Inland cards in their own display", "inlandDisplay", "Off: they shuffle into the coastal deck when the inland opens (playtest-v1)"),
         num("Hand size", "handSize", { min: 1 }),
         num("Hand size cap (+1S)", "handSizeCap", { min: 1 }),

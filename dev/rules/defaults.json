@@ -53,6 +53,10 @@
       "value": true, "status": "assumed",
       "note": "true: coastal and inland cards are separate market decks, and the inland cards form a second display (displaySize cards) when the inland opens; until then, once the coastal deck and display are empty there is nothing to buy. false: inland cards shuffle into the coastal deck at the milestone (playtest-v1). Each deck is tiered: coastal-2 under coastal, inland-2 under inland. docs/cards.md"
     },
+    "ownHarbours": {
+      "value": true, "status": "assumed",
+      "note": "Each player is assigned a harbour at setup (spread along the coast, in seat order). Starting dig cards may only start at your own harbour's mouth or share a corner with one of your own sea-linked canals; market dig cards may join anyone's network, as all digs did up to playtest-v1. docs/next-version.md section 5"
+    },
     "cardWeights": {
       "value": "starting=0,coastal=1,inland=2", "status": "assumed",
       "note": "How much each card counts toward its colour's multiplier, by deck (coastal-2 counts as coastal): starting cards don't count, so trashing them costs no points. Was 1 for every card up to playtest-v1. docs/scoring.md"

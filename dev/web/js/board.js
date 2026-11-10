@@ -89,7 +89,10 @@ export function renderBoard(svg, state, handlers) {
     }, gHex);
     const title = [`${h.key} · ${t.name}`];
     if (!t.water) title.push(`dig ${t.digCost} · build ${t.buildCost}`);
-    if (h.harbour) title.push("harbour: canals may enter the land only here");
+    const owner = (state.harbours || []).indexOf(h.key);
+    if (h.harbour) title.push(owner >= 0
+      ? `${state.players[owner].name}'s harbour: ${state.players[owner].name}'s starting dig cards start here or from their own canals; bought dig cards may join anyone's`
+      : state.harbours?.length ? "harbour (nobody's): only bought dig cards start here" : "harbour: canals may enter the land only here");
     if (h.shore) title.push("shore: beside open water, so it never counts for Reach");
     if (E.inlandClosed(state) && h.terrain === "inland") title.push("inland, closed until the milestone: canals may run along its border with the coast, but none between two inland hexes, and nothing is built here");
     if (E.isOpened(state, h.key, net)) title.push("opened: counts for Reach for every player whose canal touches it");
@@ -124,6 +127,12 @@ export function renderBoard(svg, state, handlers) {
       el("circle", { cx, cy, r: S * 0.62, class: "hub" + (state.crossings.some((c) => c.hub === h.key) ? " done" : "") }, gHex);
     }
     if (h.harbour) sprite("m-harbour", cx + S * 0.28, cy - S * 0.3, S * 0.78, gTop, { class: "harbour-sprite" });
+    if (h.harbour && owner >= 0) {
+      // Own harbours: a pennant in the owner's colour.
+      const px = cx - S * 0.42, py = cy - S * 0.62;
+      el("path", { d: `M${px} ${py} v${S * 0.5} M${px} ${py} l${S * 0.34} ${S * 0.1} l${-S * 0.34} ${S * 0.1} z`,
+        fill: state.players[owner].colour, stroke: "#3b2a1a", "stroke-width": S * 0.035, class: "harbour-owner" }, gTop);
+    }
     if (h.bonus) {
       const taken = state.claimed[h.key] !== undefined;
       const g = el("g", { class: "bonus-token" + (taken ? " claimed" : "") }, gTop);
@@ -183,6 +192,9 @@ export function renderBoard(svg, state, handlers) {
   for (const c of E.harbourMouths(state)) {
     const pts = c.split("/").map((k) => { const [q, r] = k.split(",").map(Number); return centre({ q, r }); });
     const x = pts.reduce((a, p) => a + p[0], 0) / 3, y = pts.reduce((a, p) => a + p[1], 0) / 3;
-    el("title", {}, el("circle", { cx: x, cy: y, r: S * 0.14, class: "mouth" }, gTop)).textContent = "harbour mouth: canals start here";
+    const owner = (state.harbours || []).findIndex((hk) => c.split("/").includes(hk));
+    const dot = el("circle", { cx: x, cy: y, r: S * 0.14, class: "mouth" }, gTop);
+    if (owner >= 0) dot.setAttribute("style", `stroke: ${state.players[owner].colour}`);
+    el("title", {}, dot).textContent = owner >= 0 ? `${state.players[owner].name}'s harbour mouth: canals start here` : "harbour mouth: canals start here";
   }
 }

@@ -155,6 +155,27 @@ export const edgeZone = (state, ek) => {
 export const extendsNetwork = (state, ek, link = linkedNetwork(state)) =>
   edgeCorners(ek).some((c) => link.corners.has(c));
 
+/**
+ * Own harbours: one harbour hex per player, spread along the coast in seat
+ * order (harbours sorted by q, then r). As Game.harbours in sim/rules.py.
+ */
+export function assignHarbours(board, players) {
+  const hb = Object.values(board.hexes).filter((h) => h.harbour).sort((a, b) => a.q - b.q || a.r - b.r).map((h) => h.key);
+  if (!hb.length) return [];
+  const k = hb.length;
+  return Array.from({ length: players }, (_, i) => (players <= k ? hb[Math.floor(((i + 0.5) * k) / players)] : hb[i % k]));
+}
+
+/** Where player pi's starting cards may dig from: their harbour's mouths and their own sea-linked canals' corners. */
+export function ownCorners(state, pi, link = linkedNetwork(state)) {
+  const hk = state.harbours?.[pi];
+  const out = new Set(harbourMouths(state).filter((c) => c.split("/").includes(hk)));
+  for (const [ek, o] of Object.entries(state.dug)) if (o === pi && link.edges.has(ek)) for (const c of edgeCorners(ek)) out.add(c);
+  return out;
+}
+
+export const extendsOwn = (state, ek, pi) => { const own = ownCorners(state, pi); return edgeCorners(ek).some((c) => own.has(c)); };
+
 /** Whether the card played this turn lets its diggers work away from the network here. */
 export const remoteDigAllowed = (state, ek) => {
   const where = state.turn?.digAnywhere || "";
@@ -282,6 +303,7 @@ export function createGame(data, config = {}) {
   const startingDeck = cfg.startingDeck ||
     Object.fromEntries(Object.values(defs).filter((d) => d.deck === "starting").map((d) => [d.id, 1]));
   const names = cfg.players && cfg.players.length ? cfg.players : ["Player 1", "Player 2"];
+  state.harbours = cfg.ownHarbours ? assignHarbours(state.board, names.length) : [];   // own harbours, by seat
   names.forEach((name, i) => {
     const deck = [];
     for (const [id, n] of Object.entries(startingDeck)) for (let k = 0; k < n; k++) if (defs[id]) deck.push(mint(id));
@@ -446,6 +468,8 @@ export function playCard(state, uid, discardUids = []) {
   t.phase = "resolve";
   t.played = uid;
   t.digAnywhere = d.digAnywhere || "";
+  // Own harbours: a starting card's digs extend only its player's own canals.
+  t.ownOnly = state.harbours?.length && d.deck === "starting" ? state.current : -1;
   t.discards = discardUids;
   t.pool = NEW_POOL();
   const fx = resolveEffects(d, discardUids.length);
@@ -563,7 +587,9 @@ export function canDig(state, ek) {
   if (t.phase !== "resolve" || (t.pool.dig || 0) < 1) return fail("no dig available");
   if (state.dug[ek] !== undefined) return fail("already dug");
   if (inlandClosed(state) && isDeep(state, ek)) return fail("inland on both sides: closed until the inland milestone");
-  if (state.config.connectionRequired && !extendsNetwork(state, ek) && !remoteDigAllowed(state, ek)) {
+  if (state.config.connectionRequired && t.ownOnly >= 0 && state.harbours?.length) {
+    if (!extendsOwn(state, ek, t.ownOnly)) return fail("a starting card digs only from your own harbour or your own canals");
+  } else if (state.config.connectionRequired && !extendsNetwork(state, ek) && !remoteDigAllowed(state, ek)) {
     const where = t.digAnywhere;
     return fail(where ? `must join the sea network: this card digs away from it only on ${where} ground`
       : "must join the sea network (only land animals dig away from it)");
