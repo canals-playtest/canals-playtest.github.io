@@ -46,8 +46,8 @@
       "note": "Key score per key token. Raised from 4 after simulation; docs/simulation.md"
     },
     "vpPerReach": {
-      "value": 2, "status": "assumed",
-      "note": "Reach score per opened hex. Raised from 1: buy x Reach was the weak lane in tournaments and the first league. docs/scoring.md, docs/simulation.md"
+      "value": 1, "status": "assumed",
+      "note": "Reach score per opened hex. Was 2 for a while: simulation agents that dug poorly for Reach made the lane look weak; with Reach-aware digging, 1 balances. docs/scoring.md, docs/simulation.md"
     },
     "handSizeCap": {
       "value": 5, "status": "assumed",

@@ -9,7 +9,7 @@ import { installSprites, icon, crest, ROLE_ICON, hasSymbol } from "./sprites.js"
 import { showRules } from "./rules.js";
 import { applyCommand } from "./commands.js";
 import { hostTable, joinTable, makeCode, cleanCode, shareLink } from "./net.js";
-import { submitReport, flushReports, sharing, setSharing, reportingAvailable, siteVersion, reportStatus } from "./reports.js";
+import { submitReport, flushReports, sharing, setSharing, reportingAvailable, siteVersion, siteInfo, reportStatus } from "./reports.js";
 
 const $ = (sel) => document.querySelector(sel);
 const app = $("#app");
@@ -319,7 +319,7 @@ function renderSetup() {
   refreshSeats = () => seatsEl.replaceChildren(playersBlock());
 
   app.replaceChildren(h("div", { class: "setup" },
-    h("header", { class: "top" }, brand("Canals"),
+    h("header", { class: "top" }, h("div", { class: "row wrap" }, brand("Canals"), versionBadge()),
       h("div", { class: "row wrap" }, rulesButton(),
         saved ? h("button", { onclick: () => resume(saved) }, `Resume saved game (round ${saved.round})`) : null)),
     errors.length ? h("div", { class: "errors" }, h("b", {}, "Card notation problems:"), h("ul", {}, errors.map((e) => h("li", {}, e)))) : null,
@@ -387,6 +387,17 @@ function renderSetup() {
 
     h("div", { class: "start" }, shareSwitch(), h("button", { class: "primary", onclick: startGame }, "Start game"))));
   pushLobby();
+}
+
+/** Which version of the game this is: a frozen playtest version, or the development preview. */
+function versionBadge() {
+  const slot = h("span", { class: "version-badge" });
+  siteInfo().then(({ channel, name, version }) => {
+    if (channel === "release") slot.replaceChildren(h("span", { title: `build ${version}` }, `Playtest ${String(name || "").replace(/^playtest-/, "")}`));
+    else if (channel === "dev") slot.replaceChildren(h("span", { class: "dev", title: "Work in progress: rules and cards may change. Playtests use the frozen version." },
+      `Development preview (${version?.slice(0, 7) || "?"}) · `), h("a", { href: "../" }, "frozen version"));
+  });
+  return slot;
 }
 
 /** "Share finished games with the designer", shown only where reporting is set up. */
@@ -613,7 +624,8 @@ async function sendReport() {
   if (net.role === "guest" || !state?.over || state.reportId) return;
   state.reportId = makeCode(10);
   keepFinished(state);                      // remember it was sent, with its id
-  const rep = { ...report(), site: await siteVersion() };
+  const info = await siteInfo();
+  const rep = { ...report(), site: info.version, channel: info.channel, release: info.channel === "release" ? info.name : null };
   const res = await submitReport(rep);
   if (res.sent) toast("Game report sent to the designer. Thank you!");
 }

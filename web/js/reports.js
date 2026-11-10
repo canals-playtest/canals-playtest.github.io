@@ -39,6 +39,12 @@ export async function reportingAvailable() { return !!(await siteConfig()).repor
 /** The site's build, to tell reports from different versions apart. */
 export async function siteVersion() { return (await siteConfig()).version || null; }
 
+/** Which version this is: { channel: "release"|"dev"|"local", name, version }. */
+export async function siteInfo() {
+  const c = await siteConfig();
+  return { channel: c.channel || "local", name: c.name || null, version: c.version || null };
+}
+
 /** How many reports wait in this browser, and how the last attempt went. */
 export function reportStatus() {
   return { queued: read(QUEUE, []).length, last: read(LAST, null) };

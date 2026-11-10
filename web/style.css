@@ -334,3 +334,6 @@ input.code-input { width: 7.5rem; text-transform: uppercase; letter-spacing: .1e
 .share-switch { display: flex; flex-direction: column; gap: .15rem; }
 .report-status { font-size: .8rem; }
 .small-btn { padding: .1rem .5rem; font-size: .8rem; }
+.version-badge { font-size: .8rem; color: var(--muted); font-family: "Nunito", system-ui, sans-serif; }
+.version-badge .dev { color: var(--warn); font-weight: 700; }
+.version-badge a { color: var(--accent); }
