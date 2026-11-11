@@ -327,7 +327,8 @@ export class SearchBot {
         }
         v += INCOME_VP * bt.income * left;
         v += 0.5 * bt.moneyPerCanal * E.canalsAround(st, hk);
-        if (cfg.materials && h.material && bt.extracts) v += 1 + 0.3 * bt.yield * left;
+        if (cfg.materials && h.material && bt.extracts) v += cfg.hauling === "tolls" ? 1 + 2.5 * left : 1 + 0.3 * bt.yield * left;   // fees from others, cheap builds for you
+        if (bt.lock) v += 0.6 * E.canalsAround(st, hk) * left;   // the bank pays for others' hauls through it
         if (bt.digDiscount) v += 2 * bt.digDiscount * left * (0.5 + sl.dig);
         if (bt.handSize) v += 6 * bt.handSize * left;
         if (bt.port && cfg.materials) v += (0.5 + 0.5 * left) * Math.min(4, Math.max(0, (geo.depth[hk] ?? 2) - 2));

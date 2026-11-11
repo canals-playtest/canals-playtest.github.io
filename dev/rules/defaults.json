@@ -65,6 +65,22 @@
       "value": "Spring=+1I:3:coast/inland; Ruins=+3M:4:coast; Ruins=2T:3:inland; Old lock=+1D:2:inland; Hoard=+1P:2:inland/highland", "status": "assumed",
       "note": "Site tokens (stage 2): name=effect:copies:bands. Dealt face up at random to the map's token sites (hexes.csv `token`) at setup, each to a site in one of its bands; the first building on a site takes its token, resolved like part of the card that built it. Blank: no tokens. docs/brainstorm-stage-2-3.md 3.4"
     },
+    "hauling": {
+      "value": "tolls", "status": "assumed",
+      "note": "How resources reach a build (stage 2, docs/next-version.md section 2). \"tolls\": sources never run out; clay is free from any shore hex, wood and stone cost extractionFee to the camp's or quarry's owner (free from your own); each comes the cheapest way over linked canals, paying tollPerCanal to the owner of every canal of someone else's (yours are free), and stone also stoneBankToll a canal to the bank, yours included. No import market. \"cubes\": stage 1 (docs/resources.md): cubes on extractors and an import market, hauled at haulPerEdge"
+    },
+    "tollPerCanal": {
+      "value": 1, "status": "assumed",
+      "note": "Under hauling \"tolls\": what a haul pays the owner of each canal of someone else's it uses"
+    },
+    "stoneBankToll": {
+      "value": 1, "status": "assumed",
+      "note": "Under hauling \"tolls\": stone is dearer to haul, paying this much more a canal to the bank, on your own canals too"
+    },
+    "tollMode": {
+      "value": "edge", "status": "assumed",
+      "note": "\"edge\": a toll for every canal of someone else's on the route (the designer's rule); \"owner\": one toll per other player whose canals the route uses, however many (quicker to count at the table; brainstorm-stage-2-3.md 8.1)"
+    },
     "reachBands": {
       "value": "1,1,2", "status": "assumed",
       "note": "Reach points for an opened hex by band: coast, inland, highland (terrain.csv `band`). 1,2,3 made the Reach lane carry the merchant bot (90% of its points, the best mean); 1,1,2 tones it down (docs/simulation.md). Blank: every hex scores vpPerReach, as up to stage 1. docs/next-version.md section 3"

@@ -159,7 +159,8 @@ function typeExtras(s, hk, bt, left) {
     const bonus = bt.vpPerNeighbour * (near + fade);
     v += bt.neighbourCap ? Math.min(bonus, bt.neighbourCap) : bonus;
   }
-  if (cfg.materials && h.material && bt.extracts) v += 1 + 0.3 * bt.yield * fade;   // cubes: fees from others, cheap builds for you
+  if (cfg.materials && h.material && bt.extracts) v += cfg.hauling === "tolls" ? 1 + 2.5 * fade : 1 + 0.3 * bt.yield * fade;   // fees from others, cheap builds for you
+  if (bt.lock) v += 0.6 * E.canalsAround(s, hk) * fade;   // the bank pays for others' hauls through it
   if (bt.digDiscount) v += 2 * bt.digDiscount * fade;
   if (bt.handSize) v += 6 * bt.handSize * fade;
   if (bt.port && cfg.materials) v += (0.5 + 0.5 * fade) * Math.min(4, Math.max(0, (E.buildPrice(s, hk, bt.id).picks[0]?.edges ?? 0) - 1));

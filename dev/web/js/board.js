@@ -107,8 +107,16 @@ export function renderBoard(svg, state, handlers) {
       ? `discovery ${h.bonus}: taken by ${state.players[state.claimed[h.key]].name}`
       : `discovery ${h.bonus}: the dig that opens this hex takes it`);
     if (!t.water && !(h.slots > 0)) title.push("no building site");
-    if (mats && h.harbour) title.push("port: imported cubes come ashore here, then 1 per canal edge to haul");
-    if (mats && h.material) {
+    const tolls = state.config.hauling === "tolls";
+    if (mats && tolls && h.shore) title.push("shore: clay comes from here, free; you pay only the tolls");
+    if (mats && !tolls && h.harbour) title.push("port: imported cubes come ashore here, then 1 per canal edge to haul");
+    if (mats && tolls && h.material && h.material !== "clay") {
+      const owner = E.extractorOwner(state, h.key), built = (state.buildings[h.key] || []).length > 0;
+      title.push(owner !== undefined
+        ? `${state.players[owner].name}'s ${CAMP[h.material]}: ${h.material} for anyone, never running out, ${state.config.extractionFee} each to its owner (free to them)`
+        : built ? `${E.TERRAIN_WORD[h.material]}, built over: no ${h.material} here`
+        : `${E.TERRAIN_WORD[h.material]}: build a ${CAMP[h.material]} here for a ${h.material} source that never runs out`);
+    } else if (mats && !tolls && h.material) {
       const owner = E.extractorOwner(state, h.key), left = state.cubes[h.key] || 0;
       const built = (state.buildings[h.key] || []).length > 0;
       const typed = state.buildingTypes.length > 1, word = E.TERRAIN_WORD[h.material];

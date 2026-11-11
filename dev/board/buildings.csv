@@ -1,11 +1,8 @@
-id,name,glyph,extra_cost,vp,vp_per_neighbour,neighbour_cap,income,money_per_canal,min_canals,supply,needs,site,extracts,yield,dig_discount,hand_size,port,rules,notes
-burrow,Burrow,B,0,base,,,,,,,clay,,,,,,,"2 VP, +1 income.",The plain building.
-mill,Mill,M,1,1,,,2,,,2,stone,,,,,,,"1 VP, and +2 more income (+3 in all).",Economy. Was 0 VP and never built in simulation; now 1 VP. Income already runs high (open question 33); watch it.
-wharf,Wharf,W,0,base,,,,1,2,3,wood,,,,,,,"Needs 2+ canals on its borders. When built, 1 money per canal on its borders.",Rewards busy junctions. Never VP per canal: digging must not raise the Dig lane's own multiplicand (scoring.md).
-inn,Inn,I,1,base,1,2,,,,2,wood,,,,,,,"+1 VP at game end per building next to it, anyone's, up to +2.","Clustering. Capped at +2 after simulation: its bonus is building score, which brown cards multiply."
-camp,Logging camp,L,0,base,,,,,,,,wood,TRUE,4,,,,"Forest only. Puts 4 wood on its hex: anyone may haul it, paying you 1 a cube.",From the source notes. Any other building on a forest uses up the wood.
-quarry,Quarry,Q,0,base,,,,,,,wood,stone,TRUE,4,,,,"Mountain only. Puts 4 stone on its hex: anyone may haul it, paying you 1 a cube.","From the source notes. Yield 3 at first; raised to 4, with a coastal mountain at 0,4, after simulation found stone always imported."
-pit,Clay pit,C,0,base,,,,,,,,clay,TRUE,4,,,,"Clay bed only. Puts 4 clay on its hex: anyone may haul it, paying you 1 a cube.",Resources (docs/resources.md).
-digger,Digging camp,D,0,base,,,,,,1,wood,,,,1,,,Your digs that touch this hex (share a corner with it) cost 1 less. One per player.,The notes' digging camp gave dig range; without range it becomes a local discount. One per player after simulation.
-surveyor,Surveyor's office,S,3,0,,,,,,1,stone,,,,,1,,No VP. +1 hand size for the rest of the game (up to the cap).,"From the notes: strong, so costly and one per player. The only hand size outside the +1S discovery."
-hub,Transport hub,T,1,base,,,,,,1,stone,,,,,,TRUE,An inland port: imported cubes can be hauled from here instead of a harbour. Others pay you 1 a cube.,The notes' transport hub cut haul costs; with cubes it brings the import market inland.
+id,name,glyph,extra_cost,vp,vp_per_neighbour,neighbour_cap,income,money_per_canal,min_canals,supply,needs,site,extracts,yield,dig_discount,hand_size,port,lock,rules,notes
+burrow,Burrow,B,0,base,,,,,,,clay,,,,,,,,"2 VP, +1 income.",The plain building; unlimited (a cap of 5 bound: the buildings lane collapsed). Clay comes free from any shore hex; you pay the tolls.
+camp,Logging camp,L,0,base,,,,,,2,,wood,TRUE,,,,,,Forest only. A wood source that never runs out: others pay you 1 for each wood they haul from it.,Stage 2 (brainstorm-stage-2-3.md 6.3). Never runs out; two per player.
+quarry,Quarry,Q,0,base,,,,,,2,,stone,TRUE,,,,,,Hills with stone only. A stone source that never runs out: others pay you 1 for each stone they haul from it.,"Stone is the late resource: dearer to haul (stoneBankToll). Needs nothing (needing wood, almost none were built)."
+wharf,Wharf,W,0,base,,,,1,2,3,wood,,,,,,,,"Needs 2+ canals on its borders. When built, 1 money per canal on its borders.",Rewards busy junctions. Never VP per canal: digging must not raise the Dig lane's own multiplicand (scoring.md).
+inn,Inn,I,1,base,1,3,,,,2,stone,,,,,,,,"+1 VP at game end per building next to it, anyone's, up to +3.","A late, inland building: needs stone. Cap 3 (was 2): it sat at its cap."
+mill,Mill,M,1,1,,,1,,,2,wood,,,,,,,,"1 VP, and +1 more income (+2 in all).",One less income than stage 1: income ran high (14 at the end).
+lock,Lock,K,1,base,,,,,3,2,stone,,,,,,,TRUE,"Needs 3+ canals on its borders. Every haul by another player through a canal on its borders pays you 1, from the bank.",The toll house: rewards owning a junction without making others' builds dearer (brainstorm 6.3).

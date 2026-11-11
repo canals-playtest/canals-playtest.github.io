@@ -303,6 +303,7 @@ export function buildingTypes(rows) {
     digDiscount: Number(r.dig_discount) || 0,  // off the owner's digs that touch its hex
     handSize: Number(r.hand_size) || 0,
     port: truthy(r.port),           // an inland port: import cubes can be hauled from here
+    lock: truthy(r.lock),           // hauls through canals on its borders pay its owner 1 (hauling "tolls")
     rules: r.rules || "",
   }));
   return types.length ? types : PLAIN_BUILDING;
@@ -820,7 +821,8 @@ export function marketPrice(state, r) {
  * Ports are the harbours (together) then transport hubs; sources are the
  * extractors with cubes left. Both in hexes.csv order.
  */
-export function hauls(state, link = linkedNetwork(state)) {
+export function hauls(state, link = linkedNetwork(state), pi = state.current) {
+  if (state.config.hauling === "tolls") return tollRoutes(state, link, pi);
   const adj = new Map();
   for (const ek of link.edges) {
     const [c1, c2] = edgeCorners(ek);
@@ -852,6 +854,106 @@ export function hauls(state, link = linkedNetwork(state)) {
   return { ports, sources };
 }
 
+// --------------------------------------------------------------------------- //
+// Hauling "tolls" (stage 2, docs/next-version.md section 2): sources never run
+// out; each resource comes the cheapest way over linked canals, paying the
+// owner of every canal of someone else's, and for stone the bank as well.
+// --------------------------------------------------------------------------- //
+
+/** Where each resource comes from: [{ hex, owner, fee }]. Clay: any shore hex, free. */
+function tollSources(state, r, pi) {
+  const out = [];
+  for (const [hk, h] of Object.entries(state.board.hexes)) {
+    if (r === "clay") { if (h.shore) out.push({ hex: hk, owner: undefined, fee: 0 }); continue; }
+    const o = extractorOwner(state, hk);
+    if (o !== undefined && h.material === r) out.push({ hex: hk, owner: o, fee: o === pi ? 0 : state.config.extractionFee });
+  }
+  return out;
+}
+
+/**
+ * Cheapest routes for player pi, per resource: a search over corners along
+ * linked canals, starting at every source's corners at its fee. A canal of
+ * someone else's costs tollPerCanal (tollMode "owner": the route is chosen the
+ * same way, then charged once per owner); stone pays stoneBankToll a canal more,
+ * on your own canals too. Returns { tolls, pi, best(resource, siteHex) }.
+ */
+export function tollRoutes(state, link = linkedNetwork(state), pi = state.current) {
+  const cfg = state.config;
+  const adj = new Map();
+  for (const ek of link.edges) {
+    const [c1, c2] = edgeCorners(ek);
+    (adj.get(c1) || adj.set(c1, []).get(c1)).push([c2, ek]);
+    (adj.get(c2) || adj.set(c2, []).get(c2)).push([c1, ek]);
+  }
+  const cache = {};
+  const search = (r) => {
+    if (cache[r]) return cache[r];
+    const stone = r === "stone";
+    const w = (ek) => (state.dug[ek] === pi ? 0 : cfg.tollPerCanal) + (stone ? cfg.stoneBankToll : 0);
+    const dist = new Map(), prev = new Map(), from = new Map();
+    const open = [];
+    for (const src of tollSources(state, r, pi)) {
+      for (const c of hexCorners(src.hex)) {
+        if (dist.has(c) && dist.get(c) <= src.fee) continue;
+        dist.set(c, src.fee); from.set(c, src); prev.delete(c); open.push(c);
+      }
+    }
+    // Small graphs and small weights: a simple label-correcting search is enough.
+    while (open.length) {
+      let i = 0;
+      for (let j = 1; j < open.length; j++) if (dist.get(open[j]) < dist.get(open[i])) i = j;
+      const c = open.splice(i, 1)[0], d = dist.get(c);
+      for (const [n, ek] of adj.get(c) || []) {
+        const nd = d + w(ek);
+        if (!dist.has(n) || nd < dist.get(n)) { dist.set(n, nd); prev.set(n, [c, ek]); from.set(n, from.get(c)); open.push(n); }
+      }
+    }
+    return (cache[r] = { dist, prev, from });
+  };
+  const best = (r, hk) => {
+    const { dist, prev, from } = search(r);
+    let end = null;
+    for (const c of hexCorners(hk)) if (dist.has(c) && (end === null || dist.get(c) < dist.get(end))) end = c;
+    if (end === null) return null;
+    const edges = [];
+    for (let c = end; prev.has(c); c = prev.get(c)[0]) edges.push(prev.get(c)[1]);
+    const src = from.get(end), stone = r === "stone";
+    const owed = {};   // other players -> tolls
+    let bank = 0;
+    for (const ek of edges) {
+      const o = state.dug[ek];
+      if (stone) bank += cfg.stoneBankToll;
+      if (o !== pi) owed[o] = (owed[o] || 0) + cfg.tollPerCanal;
+    }
+    if (cfg.tollMode === "owner") for (const o of Object.keys(owed)) owed[o] = cfg.tollPerCanal;
+    const tolls = Object.values(owed).reduce((a, x) => a + x, 0);
+    return { resource: r, kind: "source", from: src.hex, owner: src.owner, fee: src.fee, edges, owed, bank, tolls, cost: src.fee + tolls + bank };
+  };
+  return { tolls: true, pi, best };
+}
+
+/** Pay for a build's hauls: fees to sources' owners, tolls to canals' owners, the bank; Locks earn from the bank. */
+function payTolls(state, p, picks) {
+  const pi = state.players.indexOf(p);
+  const credit = (o, n, what) => { const q = state.players[o]; q.money += n; q.stats.rent = (q.stats.rent || 0) + n; q.stats[what] = (q.stats[what] || 0) + n; };
+  for (const x of picks) {
+    p.stats.hauled[x.resource] = (p.stats.hauled[x.resource] || 0) + 1;
+    if (x.fee && x.owner !== undefined && x.owner !== pi) credit(x.owner, x.fee, "fees");
+    for (const [o, n] of Object.entries(x.owed || {})) credit(Number(o), n, "tolls");
+    // A Lock: every haul by another player through a canal on its borders pays its owner 1, from the bank.
+    const paid = new Set();
+    for (const ek of x.edges || []) {
+      const e = state.board.edges[ek];
+      for (const hk of [e.a, e.b]) {
+        for (const b of state.buildings[hk] || []) {
+          if (btype(state, b.type).lock && b.p !== pi && !paid.has(`${hk}|${ek}`)) { paid.add(`${hk}|${ek}`); credit(b.p, 1, "lockIncome"); }
+        }
+      }
+    }
+  }
+}
+
 /**
  * What a build at hk costs player pi:
  * { total, ok, picks: [{ resource, kind: "source" | "market", from, owner, edges, haul, price, fee }] }.
@@ -869,6 +971,17 @@ export function buildPrice(state, hk, typeId, pi = state.current, haul = undefin
   const base = state.board.terrain[h.terrain].buildCost + bt.extraCost;
   const off = state.turn?.pool?.buildDiscount || 0;
   if (!cfg.materials || !bt.needs.length) return { total: Math.max(0, base - off), ok: true, picks: [] };
+  if (cfg.hauling === "tolls") {
+    // A discount comes off the build, never the tolls and fees others are owed.
+    const routes = haul?.tolls && haul.pi === pi ? haul : tollRoutes(state, linkedNetwork(state), pi);
+    const picks = [];
+    for (const r of bt.needs) {
+      const best = routes.best(r, hk);
+      if (!best) return { total: Infinity, ok: false, picks };
+      picks.push(best);
+    }
+    return { total: Math.max(0, base - off) + picks.reduce((a, x) => a + x.cost, 0), ok: true, picks };
+  }
   const { ports, sources } = haul || hauls(state);
   const corners = hexCorners(hk);
   const near = (dist) => {
@@ -940,8 +1053,10 @@ export function build(state, hk, typeId) {
   const cost = price.total;
   t.pool.build--;
   p.money -= cost; p.stats.spent += cost; p.stats.builds++;
+  // Hauling "tolls": pay each source's owner, each canal's owner and the bank; a Lock's owner earns from the bank.
+  if (state.config.hauling === "tolls") payTolls(state, p, price.picks);
   // Take each cube: off its extractor, or from the import market; pay its price.
-  for (const x of price.picks) {
+  else for (const x of price.picks) {
     p.stats.hauled[x.kind === "market" ? `${x.resource} (import)` : x.resource] = (p.stats.hauled[x.kind === "market" ? `${x.resource} (import)` : x.resource] || 0) + 1;
     if (x.kind === "source") state.cubes[x.from]--;
     else if (state.supply[x.resource] > 0) state.supply[x.resource]--;
@@ -983,6 +1098,14 @@ export const TERRAIN_WORD = { clay: "clay bed", wood: "forest", stone: "mountain
 
 /** "wood from 5,3: 2 edges, 1 to Ana" / "clay imported at 2 via the harbour: 3 edges" — logs and tooltips. */
 export function cubeNote(state, x) {
+  if (Array.isArray(x.edges)) {   // hauling "tolls"
+    const parts = [];
+    if (x.fee && x.owner !== undefined) parts.push(`${x.fee} to ${state.players[x.owner].name}`);
+    for (const [o, n] of Object.entries(x.owed || {})) parts.push(`${n} toll${n === 1 ? "" : "s"} to ${state.players[o].name}`);
+    if (x.bank) parts.push(`${x.bank} to the bank`);
+    const n = x.edges.length;
+    return `${x.resource} from ${x.from}, ${n} canal${n === 1 ? "" : "s"}${parts.length ? `: ${parts.join(", ")}` : ", free"}`;
+  }
   const edges = `${x.edges} edge${x.edges === 1 ? "" : "s"}`;
   const who = x.fee && x.owner !== undefined && x.owner !== state.current ? `, ${x.fee} to ${state.players[x.owner].name}` : "";
   if (x.kind === "market") {

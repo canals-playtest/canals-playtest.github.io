@@ -485,7 +485,9 @@ function boardLegend(state) {
     h("span", {}, h("span", { class: "lg canal" }), "canal (banks in its digger's colour)"), item("b-plain", "building"),
     h("span", {}, h("span", { class: "lg opened" }), "opened (counts for Reach)"),
     E.inlandClosed(state) ? h("span", {}, h("span", { class: "lg locked" }), "inland, closed until the milestone") : null,
-    state.config.materials ? h("span", {}, icon("m-clay"), icon("m-forest"), icon("m-mountain"),
+    state.config.materials && state.config.hauling === "tolls" ? h("span", {}, icon("m-forest"), icon("m-mountain"),
+      `forest / stone: build a logging camp / quarry for a source that never runs out (1 to its owner). Clay is free from any shore hex. A build's resources come the cheapest way over linked canals: ${state.config.tollPerCanal} to the owner of each canal of someone else's, and stone ${state.config.stoneBankToll} more a canal to the bank`)
+    : state.config.materials ? h("span", {}, icon("m-clay"), icon("m-forest"), icon("m-mountain"),
       `clay bed / forest / mountain: build a clay pit / logging camp / quarry to put cubes on the hex (number shown). Builds take the cubes they need from the cheapest connected source: ${state.config.haulPerEdge} per canal edge, plus ${state.config.extractionFee} to the owner, or imported through a harbour at the market price`) : null,
     state.config.networkScore === "crossings" || state.config.endOnCrossing ? h("span", {}, h("span", { class: "lg hub" }), "hub (crossing goal)") : null,
     state.crossings.length ? h("span", {}, `${state.crossings.length} crossing(s) complete`) : null);
@@ -809,7 +811,9 @@ function renderGame(newTurn = false) {
       h("p", { class: "hint" }, t.pool.dig > 0 ? (state.config.connectionRequired
         ? `Click a dashed border on the map to dig. A canal must start at a harbour mouth (dot) or share a corner with a canal already linked to the sea${
           t.digAnywhere ? `. This land animal may also dig anywhere${t.digAnywhere === "any" ? "" : ` ${t.digAnywhere}`}, but such a canal stays cut off until someone links it` : ""}. `
-        : "Click a dashed border on the map to dig. ") : "", t.pool.build > 0 ? (state.config.materials
+        : "Click a dashed border on the map to dig. ") : "", t.pool.build > 0 ? (state.config.materials && state.config.hauling === "tolls"
+          ? "Click a highlighted hex to build; hover for its price: its build cost, plus for each resource its type needs the cheapest haul over linked canals (tolls to other players' canals, the source's fee, and the bank's for stone). "
+          : state.config.materials
           ? "Click a highlighted hex to build; hover for its price. A build pays its terrain cost, plus each cube its type needs from the cheapest connected source: 1 per canal edge to haul it, and 1 to the extractor's owner or the import market's price. "
           : "Click a highlighted hex to build. ") : "",
         t.pool.buy > 0 ? "Click a market card to buy. " : ""),
@@ -847,7 +851,7 @@ function renderGame(newTurn = false) {
     h("h3", {}, split ? "Coastal market " : "Market ", h("span", { class: "muted" },
       `(${tierLeft(mk.stack)}${!split && mk.inland.length ? `; ${mk.inland.length} inland cards join when the inland opens` : ""})`)),
     E.inlandClosed(state) ? h("p", { class: "milestone" }, milestoneLine()) : null,
-    state.config.materials ? h("p", { class: "supply" }, h("b", {}, "Import market: "),
+    state.config.materials && state.config.hauling !== "tolls" ? h("p", { class: "supply" }, h("b", {}, "Import market: "),
       E.RESOURCES.map((r) => `${r} ${state.supply[r]} left, next ${E.marketPrice(state, r)}`).join(" · ")) : null,
     row(mk.display, 0),
     split ? h("h3", {}, "Inland market ", h("span", { class: "muted" },
