@@ -94,6 +94,9 @@ export function renderBoard(svg, state, handlers) {
       ? `${state.players[owner].name}'s harbour: ${state.players[owner].name}'s starting dig cards start here or from their own canals; bought dig cards may join anyone's`
       : state.harbours?.length ? "harbour (nobody's): only bought dig cards start here" : "harbour: canals may enter the land only here");
     if (h.shore) title.push("shore: beside open water, so it never counts for Reach");
+    if (h.feature === "hills") title.push("hills: +1 to dig its borders; a building here scores +1 VP");
+    if (h.feature === "marsh") title.push("marsh: 1 cheaper to dig, no building site, +1 Reach when opened");
+    if (state.tokens?.[h.key]) title.push(`token site: ${state.tokens[h.key].name} (${state.tokens[h.key].code}) for the first building`);
     if (h.band && !t.water) title.push(`${h.band}: Reach ${E.hexReach(state, h.key)} if opened`);
     if (t.wall) title.push("crag: no site, and no canal between two crags");
     if (t.water && h.band) title.push("lake: once a linked canal reaches one of its corners, all its corners are linked");
@@ -145,6 +148,27 @@ export function renderBoard(svg, state, handlers) {
     }
     if (!t.water && h.slots > 0 && !(state.buildings[h.key] || []).length) {
       sprite("m-site", cx, cy + S * 0.12, S * 0.55, gHex, { class: "site" });
+    }
+    // Features (stage 2): hills drawn as two rounded hills, marsh as reeds over water.
+    if (h.feature === "hills") {
+      el("path", { d: `M${cx - S * 0.62} ${cy - S * 0.18} q${S * 0.22} ${-S * 0.34} ${S * 0.44} 0 q${S * 0.18} ${-S * 0.26} ${S * 0.36} 0`,
+        fill: "#b39b6e", stroke: "#6b5636", "stroke-width": S * 0.04, class: "feature hills" }, gHex);
+    } else if (h.feature === "marsh") {
+      const g = el("g", { class: "feature marsh" }, gHex);
+      el("ellipse", { cx, cy: cy + S * 0.1, rx: S * 0.55, ry: S * 0.2, fill: "#9fc7c9", opacity: 0.75 }, g);
+      for (const dx of [-0.3, -0.1, 0.12, 0.32]) {
+        el("path", { d: `M${cx + S * dx} ${cy + S * 0.12} l${S * 0.04} ${-S * 0.34}`, stroke: "#4f7a3a", "stroke-width": S * 0.05, "stroke-linecap": "round" }, g);
+      }
+    }
+    // Site tokens (stage 2): face up; the first building here takes it.
+    const tok = state.tokens?.[h.key];
+    if (tok) {
+      const taken = state.tokenClaimed?.[h.key] !== undefined;
+      const g = el("g", { class: "site-token" + (taken ? " claimed" : "") }, gTop);
+      el("rect", { x: cx - S * 0.62, y: cy - S * 0.66, width: S * 0.62, height: S * 0.34, rx: S * 0.08, fill: taken ? "#ddd4c4" : "#f6e7b8", stroke: "#7a5f2a", "stroke-width": S * 0.035 }, g);
+      el("text", { x: cx - S * 0.31, y: cy - S * 0.42, class: "bonus", "font-size": S * 0.2, "text-anchor": "middle" }, g).textContent = tok.code;
+      el("title", {}, g).textContent = taken ? `${tok.name} (${tok.code}), taken by ${state.players[state.tokenClaimed[h.key]].name}`
+        : `${tok.name}: ${tok.code} for the first building here`;
     }
     if (mats && h.material) {
       // Trees, a peak or a clay bed, left of centre; it stays once the camp is built.

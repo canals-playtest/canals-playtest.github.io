@@ -54,6 +54,9 @@ export function rulesView(game, extra = {}) {
   const bandPts = String(c.reachBands || "").split(",").filter(Boolean).join(" / ") || String(c.vpPerReach);
   const hasLakes = Object.values(game.board.hexes).some((hx) => terrain[hx.terrain].water && hx.band);
   const hasCrags = Object.values(game.board.hexes).some((hx) => terrain[hx.terrain].wall);
+  const feats = Object.fromEntries(Object.values(game.board.hexes).filter((hx) => hx.feature).map((hx) => [hx.feature, game.board.features[hx.feature]]));
+  const tokenNames = [...new Set(Object.values(game.tokens || {}).map((t) => `${t.name} ${t.code}`))];
+  const tokens = tokenNames.length ? tokenNames.join(", ") : "";
 
   const sections = [
     ["goal", "The goal"], ["stuff", "What you have"], ["setup", "Setting up"], ["turn", "Your turn"],
@@ -167,6 +170,9 @@ export function rulesView(game, extra = {}) {
         bands ? glossaryItem("i-reach", "Three bands.", `The coast, the inland and the highland, each dearer to dig and build on (${cost("digCost")}). An opened hex is worth ${bandPts} Reach, coast / inland / highland.`) : null,
         bands ? glossaryItem("i-dig", "The highland.", c.highlandNeedsBought ? "Only bought dig cards dig a border that touches the highland; starting cards can't." : "Dug like anywhere else, at its higher cost.") : null,
         hasLakes ? glossaryItem("i-reach", "Lakes.", "Inland water. Once a linked canal reaches one of a lake's corners, all its corners are linked: a free junction to the far side.") : null,
+        feats.hills ? glossaryItem("i-dig", "Hills.", `Inland and highland: +${feats.hills.digMod} to dig a border beside them, and a building on hills scores +${feats.hills.vpBonus} VP. The stone is in the hills.`) : null,
+        feats.marsh ? glossaryItem("i-reach", "Marsh.", `${-feats.marsh.digMod} cheaper to dig, no building site, and +${feats.marsh.reachBonus} Reach when opened.`) : null,
+        tokens ? glossaryItem("m-discovery", "Site tokens.", `Dealt face up on marked sites each game (${tokens}). The first building on the site takes it, as part of the card that built it.`) : null,
         hasCrags ? glossaryItem("i-dig", "Crags.", "A ridge before the highland: no building site, and no canal between two crags. Go through a pass.") : null,
         mats ? glossaryItem("m-forest", "Forests, mountains, clay beds.", "Sources of wood, stone and clay (see Resources).") : null),
       h("h3", {}, "Opening hexes: your Reach"),

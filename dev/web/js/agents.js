@@ -10,7 +10,18 @@
 //            discoveries, building sites and key tiles.
 
 import * as E from "./engine.js";
-import { legalDiscards } from "./notation.js";
+import { legalDiscards, parseEffects } from "./notation.js";
+
+/**
+ * What an unclaimed site token on hk is worth to whoever builds there, in
+ * rough VP (`left`: 0..1, how much game remains for income to pay).
+ */
+export function tokenValue(s, hk, left) {
+  const tok = s.tokens?.[hk];
+  if (!tok || s.tokenClaimed?.[hk] !== undefined) return 0;
+  const per = { money: 0.3, income: 1.0 * left * 3, dig: 1, build: 1, buy: 1, trashAny: 0.8, trashHand: 0.6, trashDiscard: 0.6, pearl: 0.8, extraDraw: 0.5 };
+  return parseEffects(tok.code).reduce((a, x) => a + (per[x.kind] ?? 0.5) * x.n, 0);
+}
 
 /**
  * A seeded random number generator (mulberry32, as the engine's shuffles).
@@ -185,7 +196,7 @@ function greedyActions(s) {
           const sc = (h.isKey ? Math.max(0.5, counts.special) * s.config.vpPerKey : 0) + 1.2 * vp * Math.max(0.5, counts.dig)
             + 0.4 * (s.config.incomePerBuilding + bt.income) * Math.min(left, 8)
             + 0.8 * bt.moneyPerCanal * E.canalsAround(s, hk) - 0.8 * E.buildCost(s, hk, bt.id)
-            + typeExtras(s, hk, bt, left);
+            + typeExtras(s, hk, bt, left) + tokenValue(s, hk, Math.min(1, left / 12));
           if (sc > bestScore) { bestScore = sc; best = [hk, bt.id]; }
         }
       }

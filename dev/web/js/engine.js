@@ -98,9 +98,15 @@ export function harbourMouths(state) {
 /** The board for `players` players: hexes whose players column is above it are
  * left out, so the board grows with the player count. As sim/content.py. */
 export function buildBoard(hexRows, terrainRows, players = Infinity) {
-  const terrain = {};
+  const terrain = {}, features = {};
   for (const t of terrainRows) {
     if (!t.id) continue;
+    if ((t.kind || "").trim().toLowerCase() === "feature") {
+      // A feature (stage 2) sits on a band's terrain: hills, marsh.
+      features[t.id] = { id: t.id, name: t.name || t.id, fill: t.fill || "", ink: t.ink || "#333",
+        digMod: Number(t.dig_mod) || 0, site: truthy(t.buildable), vpBonus: Number(t.vp_bonus) || 0, reachBonus: Number(t.reach_bonus) || 0 };
+      continue;
+    }
     const water = truthy(t.water);
     terrain[t.id] = {
       id: t.id, name: t.name || t.id, fill: t.fill || "#ddd", ink: t.ink || "#333",
@@ -123,7 +129,11 @@ export function buildBoard(hexRows, terrainRows, players = Infinity) {
       isKey: truthy(h.key), hub: truthy(h.hub), harbour: truthy(h.harbour), bonus: (h.bonus || "").trim(),
       material: ["clay", "wood", "stone"].includes((h.material || "").trim().toLowerCase()) ? h.material.trim().toLowerCase() : "",
       slots: h.slots !== undefined && h.slots !== "" ? parseInt(h.slots, 10) || 0 : t.buildable ? 1 : 0,
+      feature: features[(h.feature || "").trim().toLowerCase()] ? (h.feature || "").trim().toLowerCase() : "",
+      tokenSite: truthy(h.token) || (h.token || "").trim() === "?",
     };
+    const f = features[hexes[hexKey(q, r)].feature];
+    if (f && !f.site) hexes[hexKey(q, r)].slots = 0;   // marsh: no site
   }
   const water = (h) => terrain[h.terrain].water;
   const sea = (h) => water(h) && !terrain[h.terrain].band;   // open water; a lake has a band
@@ -144,11 +154,13 @@ export function buildBoard(hexRows, terrainRows, players = Infinity) {
       if (terrain[h.terrain].wall && terrain[n.terrain].wall) continue;   // between two crags: no canal
       const k = edgeKey(h.key, n.key);
       if (edges[k]) continue;
-      edges[k] = { key: k, a: h.key, b: n.key, cost: Math.max(terrain[h.terrain].digCost, terrain[n.terrain].digCost) };
+      // A border costs the dearer of its two hexes: the band's cost plus its feature's (hills +1, marsh -1).
+      const hexDig = (x) => Math.max(0, terrain[x.terrain].digCost + (features[x.feature]?.digMod || 0));
+      edges[k] = { key: k, a: h.key, b: n.key, cost: Math.max(hexDig(h), hexDig(n)) };
       for (const c of edgeCorners(k)) if (isMouth(c, hexes, terrain, harbourMap)) mouths.add(c);
     }
   }
-  return { terrain, hexes, edges, harbourMap, mouths: [...mouths].sort() };
+  return { terrain, features, hexes, edges, harbourMap, mouths: [...mouths].sort() };
 }
 
 export const isWater = (state, hk) => { const h = state.board.hexes[hk]; return !!h && state.board.terrain[h.terrain].water; };
@@ -166,9 +178,12 @@ const isLake = (state, hk) => { const h = state.board.hexes[hk]; return !!h && s
 /** Reach points for an opened hex: by band (rule reachBands), else vpPerReach. */
 export function hexReach(state, hk) {
   const bands = String(state.config.reachBands || "").split(",").map((x) => Number(x));
-  if (bands.length < 3 || bands.some(Number.isNaN)) return state.config.vpPerReach;
-  return bands[{ coast: 0, inland: 1, highland: 2 }[bandOf(state, hk)] ?? 0];
+  if (bands.length < 3 || bands.some(Number.isNaN)) return state.config.vpPerReach + (featureOf(state, hk)?.reachBonus || 0);
+  return bands[{ coast: 0, inland: 1, highland: 2 }[bandOf(state, hk)] ?? 0] + (featureOf(state, hk)?.reachBonus || 0);
 }
+
+/** A hex's feature (hills, marsh) or undefined. */
+export const featureOf = (state, hk) => state.board.features?.[state.board.hexes[hk]?.feature];
 
 /** Does this edge touch the highland? */
 export const touchesHighland = (state, ek) => { const e = state.board.edges[ek]; return bandOf(state, e.a) === "highland" || bandOf(state, e.b) === "highland"; };
@@ -178,14 +193,45 @@ export const extendsNetwork = (state, ek, link = linkedNetwork(state)) =>
   edgeCorners(ek).some((c) => link.corners.has(c));
 
 /**
- * Own harbours: one harbour hex per player, spread along the coast in seat
- * order (harbours sorted by q, then r). As Game.harbours in sim/rules.py.
+ * Own harbours: one harbour hex per player, spread along the coast (harbours
+ * sorted by q, then r). On a coast with bays the harbours differ, so the
+ * best of those chosen (fewest canals to the inland, then most ground within
+ * four) goes to the last seat and the worst to the first, offsetting the
+ * first player's head start. As Game.harbours in sim/rules.py, which (frozen at
+ * stage 1, on a coast without bays) hands them out in seat order.
  */
 export function assignHarbours(board, players) {
   const hb = Object.values(board.hexes).filter((h) => h.harbour).sort((a, b) => a.q - b.q || a.r - b.r).map((h) => h.key);
   if (!hb.length) return [];
   const k = hb.length;
-  return Array.from({ length: players }, (_, i) => (players <= k ? hb[Math.floor(((i + 0.5) * k) / players)] : hb[i % k]));
+  const chosen = Array.from({ length: players }, (_, i) => (players <= k ? hb[Math.floor(((i + 0.5) * k) / players)] : hb[i % k]));
+  const rate = harbourRatings(board);
+  const order = [...new Set(chosen)].sort((a, b) => rate[a].inland - rate[b].inland || rate[b].near - rate[a].near || a.localeCompare(b));
+  // Distinct harbours: worst to seat 0, best to the last seat. (More players than harbours: seat order.)
+  if (order.length < players) return chosen;
+  return order.reverse();
+}
+
+/** For each harbour: canals from its mouths to the nearest inland border, and land hexes within four canals. */
+export function harbourRatings(board) {
+  const edges = Object.keys(board.edges), byCorner = {};
+  for (const ek of edges) for (const c of edgeCorners(ek)) (byCorner[c] ||= []).push(ek);
+  const out = {};
+  for (const h of Object.values(board.hexes).filter((x) => x.harbour)) {
+    const mouths = new Set(board.mouths.filter((c) => c.split("/").includes(h.key)));
+    const dist = new Map(), q = [];
+    for (const ek of edges) if (edgeCorners(ek).some((c) => mouths.has(c))) { dist.set(ek, 1); q.push(ek); }
+    for (let i = 0; i < q.length; i++) for (const c of edgeCorners(q[i])) for (const n of byCorner[c] || []) if (!dist.has(n)) { dist.set(n, dist.get(q[i]) + 1); q.push(n); }
+    let inland = 99;
+    const near = new Set();
+    for (const [ek, d] of dist) {
+      const e = board.edges[ek];
+      if ([e.a, e.b].some((x) => board.hexes[x].band === "inland" || board.hexes[x].band === "highland")) inland = Math.min(inland, d);
+      if (d <= 4) { near.add(e.a); near.add(e.b); }
+    }
+    out[h.key] = { inland, near: near.size };
+  }
+  return out;
 }
 
 /** Where player pi's starting cards may dig from: their harbour's mouths and their own sea-linked canals' corners. */
@@ -332,6 +378,7 @@ export function createGame(data, config = {}) {
     Object.fromEntries(Object.values(defs).filter((d) => d.deck === "starting").map((d) => [d.id, 1]));
   const names = cfg.players && cfg.players.length ? cfg.players : ["Player 1", "Player 2"];
   state.harbours = cfg.ownHarbours ? assignHarbours(state.board, names.length) : [];   // own harbours, by seat
+  dealTokens(state);
   names.forEach((name, i) => {
     const deck = [];
     for (const [id, n] of Object.entries(startingDeck)) for (let k = 0; k < n; k++) if (defs[id]) deck.push(mint(id));
@@ -382,7 +429,7 @@ function log(state, msg) { if (!state.quiet) state.log.push({ round: state.round
 export function cloneState(state, rng) {
   const c = { ...state, quiet: true, log: [], history: [] };
   const deep = structuredClone({ dug: state.dug, buildings: state.buildings, claimed: state.claimed, cubes: state.cubes,
-    supply: state.supply, crossings: state.crossings, players: state.players, market: state.market, trash: state.trash, turn: state.turn });
+    supply: state.supply, crossings: state.crossings, tokenClaimed: state.tokenClaimed, players: state.players, market: state.market, trash: state.trash, turn: state.turn });
   Object.assign(c, deep);
   if (rng !== undefined) c.rng = (rng >>> 0) || 1;
   return c;
@@ -399,6 +446,31 @@ function drawTo(state, p, n) {
       p.discard = [];
     }
     p.hand.push(p.draw.pop());
+  }
+}
+
+/** The siteTokens rule: [{ name, code, copies, bands }]. */
+export function tokenPool(cfg) {
+  return String(cfg.siteTokens || "").split(";").map((x) => x.trim()).filter(Boolean).map((x) => {
+    const [name, rest = ""] = x.split("=");
+    const [code, copies, bands] = rest.split(":");
+    return { name: name.trim(), code: (code || "").trim(), copies: Number(copies) || 1, bands: (bands || "").split("/").map((b) => b.trim()).filter(Boolean) };
+  }).filter((t) => t.code);
+}
+
+/** Site tokens: each token site takes the first shuffled token allowed in its band, the most constrained sites first. */
+function dealTokens(state) {
+  state.tokens = {};
+  state.tokenClaimed = {};
+  const sites = Object.values(state.board.hexes).filter((h) => h.tokenSite);
+  if (!sites.length) return;
+  const bag = shuffle(state, tokenPool(state.config).flatMap((t) => Array.from({ length: t.copies }, () => t)));
+  // The sites with fewest tokens allowed first (a highland site takes only a hoard), then board order.
+  const fits = (h) => bag.filter((t) => !t.bands.length || t.bands.includes(h.band)).length;
+  sites.sort((a, b) => fits(a) - fits(b));
+  for (const h of sites) {
+    const i = bag.findIndex((t) => !t.bands.length || t.bands.includes(h.band));
+    if (i >= 0) { const t = bag.splice(i, 1)[0]; state.tokens[h.key] = { name: t.name, code: t.code }; }
   }
 }
 
@@ -885,6 +957,14 @@ export function build(state, hk, typeId) {
   p.income += inc;
   const extras = [`+${inc} income`];
   if (h.isKey) { p.keys++; extras.push("key tile: +1 key"); }
+  const tok = state.tokens?.[hk];
+  if (tok && state.tokenClaimed?.[hk] === undefined) {
+    (state.tokenClaimed ||= {})[hk] = state.current;
+    const fx = {};
+    for (const x of parseEffects(tok.code)) fx[x.kind] = (fx[x.kind] || 0) + x.n;
+    applyEffects(state, p, fx);
+    extras.push(`${tok.name}: ${tok.code}`);
+  }
   if (bt.moneyPerCanal) { const m = bt.moneyPerCanal * canalsAround(state, hk); gain(p, m); extras.push(`+${m} money`); }
   if (bt.handSize) {
     p.handSize = Math.min(state.config.handSizeCap, p.handSize + bt.handSize);
@@ -916,7 +996,7 @@ export function cubeNote(state, x) {
 export function buildingVP(state, hk, b) {
   const bt = btype(state, b.type);
   const h = state.board.hexes[hk];
-  let vp = bt.vp === "base" ? state.config.vpPerBuilding : bt.vp;
+  let vp = (bt.vp === "base" ? state.config.vpPerBuilding : bt.vp) + (featureOf(state, hk)?.vpBonus || 0);
   if (bt.vpPerNeighbour) {
     let bonus = 0;
     for (const [dq, dr] of NEIGHBOURS) bonus += bt.vpPerNeighbour * (state.buildings[hexKey(h.q + dq, h.r + dr)] || []).length;

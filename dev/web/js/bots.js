@@ -14,7 +14,7 @@
 // Roles are lower case here ("dig"), as in the engine.
 
 import * as E from "./engine.js";
-import { makeRng } from "./agents.js";
+import { makeRng, tokenValue } from "./agents.js";
 
 // Weights for banked resources when a rollout stops short of the end, in VP.
 const MONEY_VP = 0.3;
@@ -319,7 +319,7 @@ export class SearchBot {
       for (const bt of st.buildingTypes) {
         if (!E.canBuild(st, hk, bt.id, haul).ok) continue;   // includes the money
         const cost = E.buildPrice(st, hk, bt.id, pi, haul).total;
-        let v = baseV + (bt.vp === "base" ? 0 : bt.vp - cfg.vpPerBuilding);
+        let v = baseV + (bt.vp === "base" ? 0 : bt.vp - cfg.vpPerBuilding) + (E.featureOf(st, hk)?.vpBonus || 0) + tokenValue(st, hk, left);
         if (bt.vpPerNeighbour) {
           const nb = E.NEIGHBOURS.filter(([dq, dr]) => (st.buildings[E.hexKey(h.q + dq, h.r + dr)] || []).length).length;
           const bonus = bt.vpPerNeighbour * (nb + left);

@@ -1,7 +1,9 @@
-id,name,fill,ink,water,buildable,dig_cost,build_cost,band,wall,notes
-sea,Open water,#a8cddf,#2b5468,TRUE,FALSE,,,,,Navigable already; canals reach the map from here at a harbour
-coastal,Coastal,#e6d9bd,#6b5a35,FALSE,TRUE,1,1,coast,,Rows 1-3. The cost zone is drawn not derived; see docs/map-and-network.md
-inland,Inland,#c3d3ab,#4b5c34,FALSE,TRUE,2,2,inland,,Rows 4-6; opens at the inland milestone. Costs from the economy calibration in docs/economy.md
-highland,Highland,#cfc0a0,#5e4a2c,FALSE,TRUE,3,3,highland,,Rows 7-8; only bought dig cards reach it (highlandNeedsBought)
-lake,Lake,#8fc3d6,#24526a,TRUE,FALSE,,,inland,,"Inland water: once a linked canal reaches one of its corners, all its corners are linked"
-crag,Crag,#a89a86,#3f3426,FALSE,FALSE,3,,highland,TRUE,No site; a border between two crags can't be dug. A ridge with passes between the inland and the highland
+id,name,fill,ink,water,buildable,dig_cost,build_cost,band,wall,kind,dig_mod,vp_bonus,reach_bonus,notes
+sea,Open water,#a8cddf,#2b5468,TRUE,FALSE,,,,,,,,,Navigable already; canals reach the map from here at a harbour
+coastal,Coastal,#e6d9bd,#6b5a35,FALSE,TRUE,1,1,coast,,,,,,The coast band. The cost zone is drawn not derived; see docs/map-and-network.md
+inland,Inland,#c3d3ab,#4b5c34,FALSE,TRUE,2,2,inland,,,,,,The inland band; opens at the inland milestone. Costs from the economy calibration in docs/economy.md
+highland,Highland,#cfc0a0,#5e4a2c,FALSE,TRUE,3,3,highland,,,,,,The highland band; only bought dig cards reach it (highlandNeedsBought)
+lake,Lake,#8fc3d6,#24526a,TRUE,FALSE,,,inland,,,,,,"Inland water: once a linked canal reaches one of its corners, all its corners are linked"
+crag,Crag,#a89a86,#3f3426,FALSE,FALSE,3,,highland,TRUE,,,,,No site; a border between two crags can't be dug. A ridge with passes between the inland and the highland
+hills,Hills,,,,TRUE,,,,,feature,1,1,,"A feature on inland or highland ground: dearer to dig (+1), and a building here scores +1 VP. The stone sites are on hills"
+marsh,Marsh,,,,FALSE,,,,,feature,-1,,1,"A feature on coast or inland ground: cheaper to dig (-1, never below 0), no building site, and +1 Reach when opened"
