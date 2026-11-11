@@ -12,9 +12,19 @@
 import * as E from "./engine.js";
 import { legalDiscards } from "./notation.js";
 
+/**
+ * A seeded random number generator (mulberry32, as the engine's shuffles).
+ * It was a plain LCG, whose first draws from consecutive seeds were
+ * correlated: seats and pools picked by seed g, g+1, ... were biased.
+ */
 export function makeRng(seed) {
   let s = seed >>> 0 || 1;
-  return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  return () => {
+    let t = (s = (s + 0x6d2b79f5) >>> 0);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
 /** Discard choices that legally pay a card's boost: [] plus one representative per legal count. */
