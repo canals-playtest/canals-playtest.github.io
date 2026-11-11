@@ -434,7 +434,8 @@ export function keysConnected(state) {
   const keys = Object.keys(state.board.hexes).filter((hk) => state.board.hexes[hk].isKey && (!band || bandOf(state, hk) === band));
   if (!keys.length) return false;
   const net = networkHexes(state, linkedNetwork(state));
-  return keys.every((hk) => net.has(hk));
+  const need = Math.ceil(keys.length * Math.min(1, Math.max(0, Number(state.config.endKeysShare ?? 1))) - 1e-9);
+  return keys.filter((hk) => net.has(hk)).length >= Math.max(1, need);
 }
 
 /**

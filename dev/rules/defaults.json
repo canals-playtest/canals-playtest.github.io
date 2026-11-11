@@ -57,9 +57,13 @@
       "value": true, "status": "assumed",
       "note": "Each player is assigned a harbour at setup (spread along the coast, in seat order). Starting dig cards may only start at your own harbour's mouth or share a corner with one of your own sea-linked canals; market dig cards may join anyone's network, as all digs did up to playtest-v1. docs/next-version.md section 5"
     },
+    "endKeysShare": {
+      "value": 0.5, "status": "assumed",
+      "note": "The share of the key tiles endOnKeys counts (endKeysBand) that must be on the network for the game to end, rounded up: 1 is all of them, 0.5 half. With all five highland villages at four players the ending fired in 1 game of 12 (2.6 linked at the end on average); with half, in 4 of 12. docs/simulation.md"
+    },
     "reachBands": {
-      "value": "1,2,3", "status": "assumed",
-      "note": "Reach points for an opened hex by band: coast, inland, highland (terrain.csv `band`). Blank: every hex scores vpPerReach, as up to stage 1. docs/next-version.md section 3"
+      "value": "1,1,2", "status": "assumed",
+      "note": "Reach points for an opened hex by band: coast, inland, highland (terrain.csv `band`). 1,2,3 made the Reach lane carry the merchant bot (90% of its points, the best mean); 1,1,2 tones it down (docs/simulation.md). Blank: every hex scores vpPerReach, as up to stage 1. docs/next-version.md section 3"
     },
     "highlandNeedsBought": {
       "value": true, "status": "assumed",
