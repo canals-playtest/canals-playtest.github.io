@@ -2,14 +2,14 @@
  "_about": "Lane priors for the bots: the mean number of cards of each scoring colour (weighted by deck, rule cardWeights) a bot holds in its final deck. python: learned by `python3 -m sim.priors`, by preset (\"*\" = all). browser: learned by `node tools/learn_priors.mjs` for the browser greedy bot, then updated in each player's browser after every finished game. See docs/simulation.md.",
  "browser": {
   "greedy": {
-   "dig": 4.88,
-   "build": 4.98,
-   "buy": 2.48,
-   "special": 5.73,
+   "dig": 5.31,
+   "build": 3.72,
+   "buy": 2.31,
+   "special": 5.69,
    "games": 90
   }
  },
- "browser_built_for": "30428519c3",
+ "browser_built_for": "c247ef9e9f",
  "browser_learned": "pass 2 of 2, 30 games at 2,3,4 players",
  "python": {
   "*": {
@@ -70,5 +70,65 @@
   }
  },
  "python_built_for": "30428519c3",
- "python_learned": "pass 1 of 2, 36 games at 3,4 players, seed 1 (the second pass was cut short)"
+ "python_learned": "pass 1 of 2, 36 games at 3,4 players, seed 1 (the second pass was cut short)",
+ "search": {
+  "*": {
+   "dig": 4.33,
+   "build": 2.23,
+   "buy": 2.1,
+   "special": 4.97,
+   "games": 126
+  },
+  "balanced": {
+   "dig": 3.39,
+   "build": 2.28,
+   "buy": 2.67,
+   "special": 4.83,
+   "games": 18
+  },
+  "builder": {
+   "dig": 0.62,
+   "build": 4.76,
+   "buy": 0.14,
+   "special": 7.19,
+   "games": 21
+  },
+  "digger": {
+   "dig": 7,
+   "build": 0.64,
+   "buy": 0.21,
+   "special": 3.14,
+   "games": 14
+  },
+  "merchant": {
+   "dig": 1.35,
+   "build": 0.65,
+   "buy": 8.05,
+   "special": 2.65,
+   "games": 20
+  },
+  "miser": {
+   "dig": 2.64,
+   "build": 4.07,
+   "buy": 0.29,
+   "special": 9.93,
+   "games": 14
+  },
+  "prospector": {
+   "dig": 7.94,
+   "build": 0.28,
+   "buy": 1.22,
+   "special": 3.83,
+   "games": 18
+  },
+  "rusher": {
+   "dig": 7.9,
+   "build": 2.67,
+   "buy": 1.1,
+   "special": 3.95,
+   "games": 21
+  }
+ },
+ "search_built_for": "c247ef9e9f",
+ "search_learned": "pass 2 of 2, 36 games at 3,4 players"
 }
