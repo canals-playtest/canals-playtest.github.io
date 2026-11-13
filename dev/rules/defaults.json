@@ -90,7 +90,7 @@
       "note": "Under harbourDraft: a deep harbour (at least two canals nearer the inland than the median harbour) costs this much of its player's starting money. brainstorm-stage-3.md 6.5"
     },
     "reachBands": {
-      "value": "1,1,2", "status": "assumed",
+      "value": "1,1,1", "status": "assumed",
       "note": "Reach points for an opened hex by band: coast, inland, highland (terrain.csv `band`). 1,2,3 made the Reach lane carry the merchant bot (90% of its points, the best mean); 1,1,2 tones it down (docs/simulation.md). Blank: every hex scores vpPerReach, as up to stage 1. docs/next-version.md section 3"
     },
     "highlandNeedsBought": {
@@ -102,11 +102,11 @@
       "note": "Which key tiles endOnKeys counts: \"highland\" (only the highland villages) or blank (all of them). On the deep map the inland villages are linked long before the far ones. docs/brainstorm-stage-2-3.md 3.6"
     },
     "cardWeights": {
-      "value": "starting=0,coastal=1,inland=2", "status": "assumed",
+      "value": "starting=0,coastal=1,coastal-2=2,inland=2", "status": "assumed",
       "note": "How much each card counts toward its colour's multiplier, by deck (coastal-2 counts as coastal): starting cards don't count, so trashing them costs no points. Was 1 for every card up to playtest-v1. docs/scoring.md"
     },
     "vpPerBuilding": {
-      "value": 2, "status": "assumed",
+      "value": 3, "status": "assumed",
       "note": "Building score per building. Calibration table in docs/scoring.md"
     },
     "vpPerKey": {
@@ -213,8 +213,36 @@
       "value": "+1C", "status": "assumed",
       "note": "What the player who turns the third tide by linking a highland village takes (the second tide comes with the milestone, which has milestoneReward)."
     },
+    "buildNeedsOwnCanal": {
+      "value": true, "status": "assumed",
+      "note": "Build only on a hex that one of your own sea-linked canals borders, not anywhere on the network: digging has a private return, and neighbours contest sites. balance-aims.md 3.5"
+    },
+    "startingTech": {
+      "value": true, "status": "assumed",
+      "note": "After the harbour draft, in seat order, each player opens one inner slot of their board: its technology and income are theirs, its token goes back in the box; no two alike. balance-aims.md 3.7"
+    },
+    "techTideGate": {
+      "value": true, "status": "assumed",
+      "note": "The outer ring of the board opens at the second tide; capstones are taken from the third. balance-aims.md 3.6"
+    },
+    "capstoneLimit": {
+      "value": 1, "status": "assumed",
+      "note": "Capstones a player may hold (0: no limit). With no limit 55% went to the eventual winner. polish-pass.md 4.4"
+    },
+    "tidesLiftStarters": {
+      "value": true, "status": "assumed",
+      "note": "From the second tide, starting dig cards join anyone's canals (the own-harbour limit holds only in the first act). Dredging takes Sluice's slot. polish-pass.md 4.5"
+    },
+    "storeyCost": {
+      "value": 2, "status": "assumed",
+      "note": "Second storey: a second building on a hex costs this much more. balance-aims.md 3.5"
+    },
+    "trashFloor": {
+      "value": 4, "status": "assumed",
+      "note": "No trashing when you own this many cards or fewer (0: no floor). polish-pass.md 4.2"
+    },
     "multiplierSteps": {
-      "value": "0:1,1:2,4:3,7:4,10:5", "status": "assumed",
+      "value": "0:1,1:2,3:3,5:4,7:5", "status": "assumed",
       "note": "Each colour's multiplier in steps: \"count:multiplier\" pairs, the highest count reached applies (0 gives x1, 1-3 x2, 4-6 x3, 7-9 x4, 10 or more x5). Blank: the weighted count itself (up to multiplierCap). brainstorm-stage-3.md 6.2"
     },
     "deckSizes": {

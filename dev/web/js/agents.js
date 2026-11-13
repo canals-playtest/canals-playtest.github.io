@@ -56,6 +56,7 @@ function boostChoices(s, uid, rest) {
 export function randomTurn(s, rnd) {
   const pick = (a) => a[Math.floor(rnd() * a.length)];
   if (s.turn?.phase === "harbour") return E.chooseHarbour(s, pick(E.draftChoices(s)));
+  if (s.turn?.phase === "startTech") return E.chooseStartTech(s, pick(E.startTechChoices(s)));
   const p = E.currentPlayer(s);
   if (!p.hand.length) return E.pass(s);
   if (rnd() < 0.05 && E.canForage(s, "hand").ok) return E.forage(s, rnd() < 0.5 ? "hand" : pick(p.hand));
@@ -269,6 +270,7 @@ export function expectedCounts(s, pi, counts = E.score(s, pi).counts) {
 
 export function greedyTurn(s) {
   if (s.turn?.phase === "harbour") return E.chooseHarbour(s, E.bestHarbour(s));
+  if (s.turn?.phase === "startTech") return E.chooseStartTech(s, E.bestStartTech(s, E.rngFn(s)));
   const p = E.currentPlayer(s);
   if (!p.hand.length) return E.pass(s);
   const me = s.current;

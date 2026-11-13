@@ -226,7 +226,7 @@ export function legalMoves(s) {
  * A token's worth on the technology board: its slot's printed income, less a
  * leap's pearl, plus a little for the slots it opens (new types to build).
  */
-const TECH_WORTH = { sluice: 1.5, scaffolding: 3, barge: 2, reserve: 0.5, diving: 1.5,
+const TECH_WORTH = { sluice: 1.5, dredging: 2, scaffolding: 3, barge: 2, reserve: 0.5, diving: 1.5,
   relay: 3, tunnelling: 1.5, yard: 3, storey: 2, tollhouse: 2, stoneboats: 1, barter: 1.5, guild: 2, larder: 1.5, survey: 5, lustre: 1.5, secondwind: 1.5 };
 
 export function techValue(st, pi, typeId, left) {
@@ -578,6 +578,7 @@ export class SearchBot {
   /** Take the current player's whole turn. */
   playTurn(st) {
     if (st.turn?.phase === "harbour") return E.chooseHarbour(st, E.bestHarbour(st, this.rng));
+    if (st.turn?.phase === "startTech") return E.chooseStartTech(st, E.bestStartTech(st, this.rng, this.startPrefer || null));
     if (!E.currentPlayer(st).hand.length) return E.pass(st);
     const m = this.choose(st);
     this.seat = st.current;

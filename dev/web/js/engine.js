@@ -29,6 +29,9 @@ export const PLAYER_COLOURS = ["#d1495b", "#2e86ab", "#edae49", "#66a182", "#8d6
 // RNG (mulberry32, state kept in the game state so it survives JSON copies)
 // --------------------------------------------------------------------------- //
 
+/** A random function drawing on the game's own RNG, so seeded games stay repeatable. */
+export const rngFn = (state) => () => rand(state);
+
 function rand(state) {
   let t = (state.rng = (state.rng + 0x6d2b79f5) >>> 0);
   t = Math.imul(t ^ (t >>> 15), t | 1);
@@ -426,8 +429,51 @@ export function createGame(data, config = {}) {
     state.current = state.draft.order[0];
     state.turn = { phase: "harbour", pool: {}, actions: [], discards: [] };
     log(state, `Harbour draft: ${state.players[state.current].name} chooses first.`);
-  }
+  } else beginTechDraft(state);
   return state;
+}
+
+/**
+ * The starting technology (balance-aims.md 3.7, rule startingTech): after
+ * the harbours, in seat order (the opposite of the harbour draft), each
+ * player opens one inner slot of their board. Its technology and income are
+ * theirs; its token goes back in the box. No two players the same.
+ */
+function beginTechDraft(state) {
+  if (!state.config.startingTech || !state.tech) { state.current = 0; startTurn(state); return; }
+  state.draft = { order: state.players.map((_, i) => i), tech: true };
+  state.current = 0;
+  state.turn = { phase: "startTech", pool: {}, actions: [], discards: [] };
+  log(state, `Starting technologies: ${state.players[0].name} chooses first.`);
+}
+
+/** Inner slots nobody has opened as a starting technology. */
+export function startTechChoices(state) {
+  if (!state.tech) return [];
+  const taken = new Set(state.players.map((p) => p.startTech).filter(Boolean));
+  return state.tech.slots.filter((x) => x.ring === "inner" && !taken.has(x.id)).map((x) => x.id);
+}
+
+export function chooseStartTech(state, slotId) {
+  if (state.turn?.phase !== "startTech") return fail("not choosing starting technologies");
+  if (!startTechChoices(state).includes(slotId)) return fail("not a free inner slot");
+  const p = currentPlayer(state), x = techSlot(state, slotId);
+  p.startTech = slotId;
+  p.taken.push(slotId);
+  const inc = x.income + (x.tech === "granary" && techLevel(state) >= 1 ? 1 : 0);
+  p.income += inc;
+  log(state, `${p.name} starts with ${x.name} (${x.sector}): ${x.text}${inc ? ` +${inc} income.` : ""}`);
+  const next = state.draft.order[state.draft.order.indexOf(state.current) + 1];
+  if (next === undefined) { state.draft = null; state.current = 0; startTurn(state); }
+  else state.current = next;
+  return OK;
+}
+
+/** A computer player's starting technology: one at random (so openings vary), or by a preference list. */
+export function bestStartTech(state, rnd = Math.random, prefer = null) {
+  const choices = startTechChoices(state);
+  if (prefer) for (const tech of prefer) { const x = state.tech.slots.find((y) => y.tech === tech); if (x && choices.includes(x.id)) return x.id; }
+  return choices[Math.floor(rnd() * choices.length)];
 }
 
 /** Harbours still free in the draft. */
@@ -453,8 +499,7 @@ export function chooseHarbour(state, hk) {
   const next = state.draft.order[state.draft.order.indexOf(state.current) + 1];
   if (next === undefined) {
     state.draft = null;
-    state.current = 0;
-    startTurn(state);
+    beginTechDraft(state);
   } else state.current = next;
   return OK;
 }
@@ -551,6 +596,10 @@ export function techBoard(rows) {
 }
 
 export const techOn = (state) => !!state.tech;
+/** The tide for rules gated by it: 3 when tides are off (everything open). */
+export const tideNow = (state) => (state.config.tides && state.config.inlandMilestone !== "none" ? state.tide || 1 : 3);
+/** Is this slot's ring open yet (rule techTideGate: the outer ring at the second tide)? */
+export const ringOpen = (state, x) => x.ring === "inner" || !state.config.techTideGate || tideNow(state) >= 2;
 const TECH_LEVEL = { income: 0, level1: 1, level2: 2, full: 3 };
 /** How far the board is played: 0 tokens and income, 1 inner technologies, 2 outer ones too, 3 capstones. */
 export const techLevel = (state) => (state.tech ? TECH_LEVEL[state.config.techBoard] ?? 0 : -1);
@@ -568,6 +617,26 @@ export const CAPSTONES = {
   Stores: { name: "Treasurer", text: "If you own two or more Earn cards, counts as two more cards of the colour that scores you most (not Dig)." },
   Pearls: { name: "Pearl diver", text: "Each pearl you hold at the end counts as 1 Reach, up to 4." },
 };
+
+/**
+ * Capstones player pi may take now: sectors they have emptied, nobody holds,
+ * from the third tide (rule techTideGate), up to capstoneLimit a player.
+ */
+export function claimCapstones(state, pi) {
+  if (!state.tech || techLevel(state) < 3) return [];
+  if (state.config.techTideGate && tideNow(state) < 3) return [];
+  const p = state.players[pi], got = [];
+  state.capstones ||= {};
+  for (const sector of state.tech.sectors) {
+    const limit = state.config.capstoneLimit || Infinity;
+    if (capstonesOf(state, pi).length >= limit) break;
+    if (state.capstones[sector] !== undefined) continue;
+    if (!state.tech.slots.filter((x) => x.sector === sector).every((x) => p.taken.includes(x.id))) continue;
+    state.capstones[sector] = pi;
+    got.push(sector);
+  }
+  return got;
+}
 
 /** The sectors whose capstone player pi holds. */
 export const capstonesOf = (state, pi) => Object.keys(state.capstones || {}).filter((k) => state.capstones[k] === pi);
@@ -599,7 +668,7 @@ export function buildSlots(state, pi, typeId) {
   if (!state.tech) return [];
   const taken = state.players[pi].taken || [];
   const ring = { inner: 0, corner: 1, edge: 1 };
-  return state.tech.slots.filter((x) => x.token === typeId && !taken.includes(x.id))
+  return state.tech.slots.filter((x) => x.token === typeId && !taken.includes(x.id) && ringOpen(state, x))
     .map((x) => ({ id: x.id, leap: !slotReachable(state, pi, x.id), ring: ring[x.ring] }))
     .sort((a, b) => a.leap - b.leap || a.ring - b.ring)
     .map(({ id, leap }) => ({ id, leap }));
@@ -791,7 +860,9 @@ export function playCard(state, uid, discardUids = [], board = null) {
   t.digAnywhere = d.digAnywhere || "";
   // Own harbours: a starting card's digs extend only its player's own canals.
   // Sluice (technology): your starting cards join anyone's canals.
-  t.ownOnly = state.harbours?.length && d.deck === "starting" && !hasTech(state, state.current, "sluice") ? state.current : -1;
+  // The second tide lifts it for everyone (rule tidesLiftStarters).
+  const lifted = state.config.tidesLiftStarters && state.config.tides && state.tide >= 2;
+  t.ownOnly = state.harbours?.length && d.deck === "starting" && !lifted && !hasTech(state, state.current, "sluice") ? state.current : -1;
   t.starter = d.deck === "starting";
   t.discards = discardUids;
   // Second wind (technology): a second card adds to what is left of the first's pool.
@@ -944,7 +1015,10 @@ export function digCost(state, ek, pi = state.current) {
     const dig = (h) => Math.max(0, b.terrain[h.terrain].digCost + (h.feature === "hills" ? 0 : b.features?.[h.feature]?.digMod || 0));
     cost = Math.max(dig(b.hexes[e.a]), dig(b.hexes[e.b]));
   }
-  return Math.max(0, cost - (state.turn?.pool?.digDiscount || 0) - camp);
+  let c = Math.max(0, cost - (state.turn?.pool?.digDiscount || 0) - camp);
+  // Dredging (technology): your first dig each turn costs 1 less, never below 1.
+  if (c > 1 && state.tech && pi === state.current && !(state.turn?.actions || []).some((a) => a.type === "dig") && hasTech(state, pi, "dredging")) c -= 1;
+  return c;
 }
 
 export function canDig(state, ek) {
@@ -1039,6 +1113,10 @@ export function checkTides(state) {
       const n = leave(m.inland, "inland") + leave(m.stack, "inland");
       log(state, `The third tide${village ? ": a highland village is on the network" : ": the coastal deck is spent"}. The highland opens to starting dig cards; ${n} inland tier-1 cards leave the game.`);
       if (village) reward("third");
+      for (let i = 0; i < state.players.length; i++) {
+        const got = claimCapstones(state, (state.current + i) % state.players.length);
+        if (got.length) log(state, `${state.players[(state.current + i) % state.players.length].name} takes ${got.map((k) => CAPSTONES[k]?.name).join(", ")}.`);
+      }
     }
   }
 }
@@ -1239,7 +1317,9 @@ function payTolls(state, p, picks) {
 export function buildPrice(state, hk, typeId, pi = state.current, haul = undefined) {
   const h = state.board.hexes[hk];
   const cfg = state.config, bt = btype(state, typeId);
-  const base = state.board.terrain[h.terrain].buildCost + bt.extraCost;
+  const here = state.buildings[hk] || [];
+  const storey = h.slots > 0 && here.length >= h.slots ? state.config.storeyCost || 0 : 0;   // Second storey: the second building costs more
+  const base = state.board.terrain[h.terrain].buildCost + bt.extraCost + storey;
   const off = state.turn?.pool?.buildDiscount || 0;
   // Scaffolding (technology): every site 1 less, never below 1.
   const site = (n) => (state.tech && n > 1 && hasTech(state, pi, "scaffolding") ? n - 1 : n);
@@ -1310,6 +1390,15 @@ export function builtCount(state, pi, typeId) {
 }
 
 /** `haul` (from hauls()) prices many sites at once, as buildPrice. */
+/** Does one of pi's own sea-linked canals run along a border of hk? */
+export function ownCanalAt(state, hk, pi, link = linkedNetwork(state)) {
+  const h = state.board.hexes[hk];
+  return NEIGHBOURS.some(([dq, dr]) => {
+    const ek = edgeKey(hk, hexKey(h.q + dq, h.r + dr));
+    return state.dug[ek] === pi && link.edges.has(ek);
+  });
+}
+
 export function canBuild(state, hk, typeId, haul = undefined, slotId = undefined) {
   const t = state.turn, p = currentPlayer(state), h = state.board.hexes[hk];
   const bt = btype(state, typeId);
@@ -1324,6 +1413,7 @@ export function canBuild(state, hk, typeId, haul = undefined, slotId = undefined
   if (here.length >= h.slots && !storey) return fail("no free slot");
   if (inlandClosed(state) && isInland(state, hk)) return fail("inland: closed until the inland milestone");
   if (state.config.buildNeedsNetwork && !networkHexes(state).has(hk)) return fail("must be on the canal network");
+  if (state.config.buildNeedsOwnCanal && !ownCanalAt(state, hk, state.current)) return fail("you may build only where one of your own linked canals runs");
   if (bt.site && h.material !== bt.site) return fail(`a ${bt.name} goes only on a ${TERRAIN_WORD[bt.site]}`);
   if (canalsAround(state, hk) < bt.minCanals) return fail(`${bt.name} needs ${bt.minCanals}+ canals around it`);
   if (state.tech) {
@@ -1371,11 +1461,8 @@ export function build(state, hk, typeId, slotId = undefined) {
   if (slot) {
     p.taken.push(slot.id);
     const sector = techSlot(state, slot.id).sector;
-    if (techLevel(state) >= 3 && (state.capstones ||= {})[sector] === undefined
-      && state.tech.slots.filter((x) => x.sector === sector).every((x) => p.taken.includes(x.id))) {
-      state.capstones[sector] = state.current;
-      extras.push(`the ${CAPSTONES[sector]?.name || sector} capstone`);
-    }
+    const got = claimCapstones(state, state.current);
+    if (got.length) extras.push(got.map((k) => `the ${CAPSTONES[k]?.name || k} capstone`).join(", "));
     if (techSlot(state, slot.id).tech === "survey" && techLevel(state) >= 2) {
       p.handSize = Math.min(state.config.handSizeCap || Infinity, p.handSize + 1);
       extras.push(`Survey: hand size ${p.handSize}`);
@@ -1494,6 +1581,7 @@ export function canTrash(state, uid, source) {
   if (!list.includes(uid)) return fail("card not there");
   const specific = source === "hand" ? "trashHand" : "trashDiscard";
   if ((t.pool[specific] || 0) + (t.pool.trashAny || 0) < 1) return fail("no trash available");
+  if (state.config.trashFloor > 0 && ownedCards(p).length <= state.config.trashFloor) return fail(`no trashing below ${state.config.trashFloor} cards`);
   return OK;
 }
 
@@ -1768,7 +1856,7 @@ export function cardWeights(state) {
     const [k, v] = part.split("=");
     if (v !== undefined) w[k.trim().toLowerCase()] = Number(v);
   }
-  return (d) => w[deckFamily(d.deck)] ?? 1;
+  return (d) => w[String(d.deck).toLowerCase()] ?? w[deckFamily(d.deck)] ?? 1;
 }
 
 export function ownedCards(p) { return [...p.draw, ...p.hand, ...p.discard, ...p.play]; }

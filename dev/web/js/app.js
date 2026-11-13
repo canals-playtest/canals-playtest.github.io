@@ -169,7 +169,7 @@ function setData(d) {
 
 // Bumped when a default changes, so a setup saved in this browser earlier
 // picks up the new value instead of silently keeping the old one.
-const SETUP_VERSION = 12;
+const SETUP_VERSION = 13;
 // The connection rule became settled (2); building types became the working rule (3);
 // the inland milestone replaced the first-opened-hex unlock (4); the game ends by
 // trigger, with rounds a cap, and the pearl track came in (6).
@@ -766,6 +766,14 @@ function renderGame(newTurn = false) {
         : h("p", { class: "thinking" }, `Waiting for ${p.name}… `),
       me && me !== p ? [h("h3", {}, `${whose(me.name)} hand `, h("span", { class: "muted" }, "(waiting)")),
         h("div", { class: "hand mini" }, me.hand.map((uid) => cardView(E.def(state, uid), { cls: "dim" })))] : null);
+  } else if (t.phase === "startTech") {
+    // The starting technology: an inner slot opened for free; its token goes back in the box.
+    controls = h("div", { class: "controls" },
+      h("p", {}, h("b", {}, "Choose your starting technology. "), "It opens one inner slot of your board: its technology and income are yours from the first turn, and its building token goes back in the box. No two players the same."),
+      h("div", { class: "row wrap" }, E.startTechChoices(state).map((id) => {
+        const x = E.techSlot(state, id), bt = state.buildingTypes.find((b) => b.id === x.token);
+        return h("button", { title: `${x.text} (gives up a ${bt?.name || x.token} token)`, onclick: () => act({ type: "startTech", slot: id }) }, `${x.name}: ${x.text}`);
+      })));
   } else if (t.phase === "harbour") {
     // The harbour draft: last seat chooses first; a deep harbour costs a premium.
     controls = h("div", { class: "controls" },

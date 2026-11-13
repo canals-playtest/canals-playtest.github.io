@@ -33,6 +33,7 @@ export function validCommand(cmd) {
       && (cmd.kind === "reserve" ? int(cmd.uid) : cmd.uid === undefined || cmd.uid === null || card(cmd.uid));
     case "end": case "pass": return true;
     case "harbour": return str(cmd.hex);
+    case "startTech": return str(cmd.slot);
     default: return false;
   }
 }
@@ -51,6 +52,7 @@ export function applyCommand(state, cmd) {
     case "play": res = E.playCard(state, cmd.play, cmd.discards, cmd.board || null); break;
     case "dig": res = E.dig(state, cmd.edge); break;
     case "harbour": res = E.chooseHarbour(state, cmd.hex); ended = res.ok; break;
+    case "startTech": res = E.chooseStartTech(state, cmd.slot); ended = res.ok; break;
     case "build": res = E.build(state, cmd.hex, cmd.kind, cmd.slot); break;
     case "buy": res = E.buy(state, cmd.slot, !!cmd.top); reveals = true; break;
     case "trash": res = E.trash(state, cmd.uid, cmd.from); break;
