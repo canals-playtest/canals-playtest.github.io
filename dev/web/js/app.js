@@ -169,7 +169,7 @@ function setData(d) {
 
 // Bumped when a default changes, so a setup saved in this browser earlier
 // picks up the new value instead of silently keeping the old one.
-const SETUP_VERSION = 11;
+const SETUP_VERSION = 12;
 // The connection rule became settled (2); building types became the working rule (3);
 // the inland milestone replaced the first-opened-hex unlock (4); the game ends by
 // trigger, with rounds a cap, and the pearl track came in (6).
@@ -939,7 +939,8 @@ function renderGame(newTurn = false) {
     h("header", { class: "top" },
       brand("Canals"),
       h("div", { class: "turn-info" }, `Round ${state.round}`, h("span", { class: "muted", title: `The game ends when the market decks run out or every key tile is on the network; at most ${state.config.rounds} rounds` },
-          state.config.endOnMarket ? ` · market: ${state.market.stack.length + state.market.inland.length} cards left` : ` of ${state.config.rounds}`), state.endTriggered ? h("span", { class: "warn" }, " · final round") : null,
+          state.config.endOnMarket ? ` · market: ${state.market.stack.length + state.market.inland.length} cards left` : ` of ${state.config.rounds}`), state.tide ? h("span", { class: "muted", title: "Tide 1: the coast. Tide 2 (the inland milestone): the inland; coastal tier-1 cards are gone. Tide 3 (a highland village on the network, or the coastal deck spent): the highland for starting cards; inland tier-1 cards are gone." }, ` · tide ${state.tide} of 3`) : null,
+        state.endTriggered ? h("span", { class: "warn" }, " · final round") : null,
         " · ", crest(p, state.current), h("b", {}, whoseSeat(state.current)), " turn", p.ai ? h("span", { class: "muted" }, " (computer)") : null),
       h("div", { class: "row wrap" }, tableBadge(), rulesButton("Rules"),
         h("button", { class: "ghost", onclick: () => download(`canals-game-r${state.round}.json`, JSON.stringify(state)) }, "Save game"),

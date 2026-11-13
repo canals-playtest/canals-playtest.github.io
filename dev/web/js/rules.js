@@ -292,6 +292,12 @@ export function rulesView(game, extra = {}) {
       h("p", { class: "muted" }, "A pearl taken this turn can't be spent until your next one. Unspent pearls score nothing.")) : null,
 
     sec("market",
+      c.tides && c.inlandMilestone !== "none" ? h("div", { class: "box" }, h("b", {}, "Three tides. "),
+        "The game has three acts. ", h("b", {}, "The first tide"), " is the start: the coast and the coastal cards. ",
+        h("b", {}, "The second"), " comes with the inland milestone: the inland opens, and the coastal tier-1 cards still in the deck leave the game, so the coastal deck is tier 2 from then. ",
+        h("b", {}, "The third"), " comes when the first highland village is on the network, or when the coastal deck runs out: starting dig cards may dig in the highland, and the inland tier-1 cards still in the deck leave the game. ",
+        c.tideReward ? `The player who links that village takes ${c.tideReward}. ` : "",
+        "Cards already on display stay.") : null,
       h("p", {}, split
         ? [`There are two market decks, each with its own display of ${c.displaySize} cards: coastal from the start, inland once the inland opens. `,
           "Buying a card refills its display from its own deck. If the coastal deck and display run out before the inland opens, there is nothing to buy until it does."]

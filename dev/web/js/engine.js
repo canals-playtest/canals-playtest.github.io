@@ -954,7 +954,7 @@ export function canDig(state, ek) {
   if (t.phase !== "resolve" || (t.pool.dig || 0) < 1) return fail("no dig available");
   if (state.dug[ek] !== undefined) return fail("already dug");
   if (inlandClosed(state) && isDeep(state, ek)) return fail("inland on both sides: closed until the inland milestone");
-  if (state.config.highlandNeedsBought && t.starter && touchesHighland(state, ek) && !hasTech(state, state.current, "tunnelling")) return fail("a starting card can't dig in the highland: only bought dig cards reach it");
+  if (state.config.highlandNeedsBought && t.starter && touchesHighland(state, ek) && !hasTech(state, state.current, "tunnelling") && !(state.tide >= 3)) return fail("a starting card can't dig in the highland: only bought dig cards reach it");
   if (state.config.connectionRequired && t.ownOnly >= 0 && state.harbours?.length) {
     if (!extendsOwn(state, ek, t.ownOnly)) return fail("a starting card digs only from your own harbour or your own canals");
   } else if (state.config.connectionRequired && !extendsNetwork(state, ek) && !remoteDigAllowed(state, ek)) {
@@ -993,8 +993,54 @@ export function dig(state, ek) {
     applyEffects(state, p, fx);
   }
   checkInland(state);
+  checkTides(state);
   if (state.config.networkScore === "crossings" || state.config.endOnCrossing) checkCrossings(state);
   return OK;
+}
+
+/**
+ * Three tides (brainstorm-stage-3.md 10.2), rule tides. The second comes
+ * with the inland milestone: the undrawn coastal tier-1 cards leave, so the
+ * coastal deck is tier 2 from then. The third comes with the first highland
+ * village on the network, or the coastal deck running out: the highland
+ * opens to starting dig cards and the undrawn inland tier-1 cards leave.
+ * The player whose turn turns a tide takes tideReward.
+ */
+export function checkTides(state) {
+  const cfg = state.config, m = state.market;
+  if (!cfg.tides || cfg.inlandMilestone === "none") return;
+  state.tide ||= 1;
+  const leave = (pile, family) => {
+    const out = pile.filter((u) => { const d = def(state, u); return deckTier(d.deck) === 1 && deckFamily(d.deck) === family; });
+    if (!out.length) return 0;
+    const keep = pile.filter((u) => !out.includes(u));
+    pile.length = 0; pile.push(...keep);
+    m.gone.push(...out);
+    return out.length;
+  };
+  const reward = (what) => {
+    const p = currentPlayer(state), code = cfg.tideReward;
+    if (!code || !state.turn || state.turn.phase === "over") return;
+    log(state, `${p.name} turned the ${what} tide: ${code}.`);
+    const fx = {};
+    for (const x of parseEffects(code)) fx[x.kind] = (fx[x.kind] || 0) + x.n;
+    applyEffects(state, p, fx);
+  };
+  if (state.tide === 1 && state.inlandOpen) {
+    state.tide = 2;
+    const n = leave(m.stack, "coastal");
+    log(state, `The second tide: ${n} coastal tier-1 cards leave the game; the coastal deck is tier 2 from now.`);
+  }
+  if (state.tide === 2) {
+    const net = networkHexes(state, linkedNetwork(state));
+    const village = Object.values(state.board.hexes).some((h) => h.isKey && h.band === "highland" && net.has(h.key));
+    if (village || !m.stack.length) {
+      state.tide = 3;
+      const n = leave(m.inland, "inland") + leave(m.stack, "inland");
+      log(state, `The third tide${village ? ": a highland village is on the network" : ": the coastal deck is spent"}. The highland opens to starting dig cards; ${n} inland tier-1 cards leave the game.`);
+      if (village) reward("third");
+    }
+  }
 }
 
 // --------------------------------------------------------------------------- //
@@ -1434,6 +1480,7 @@ export function buy(state, slot, top = false) {
   else if (slot < m.display.length + m.inlandDisplay.length) { m.inlandDisplay.splice(slot - m.display.length, 1); m.bought.inland = true; }
   else p.reserved.splice(slot - m.display.length - m.inlandDisplay.length, 1);
   restock(state);
+  checkTides(state);
   t.actions.push({ type: "buy", card: d.id, cost, ...(top ? { top: true } : {}) });
   log(state, `${p.name} buys ${displayName(d)} for ${cost}${top ? `, onto their draw pile (+${extra})` : ""}.`);
   return OK;
@@ -1659,6 +1706,7 @@ function endRound(state) {
     restock(state);
   }
   m.bought = { coastal: false, inland: false };
+  checkTides(state);
   const trigger = (reason, msg) => {
     if (state.endTriggered) return;
     state.endTriggered = true; state.endReason = reason;

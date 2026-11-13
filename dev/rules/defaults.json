@@ -205,6 +205,14 @@
       "value": 1, "status": "assumed",
       "note": "Pearls to take a token from a slot not next to an open one (the leap). -1: no leaping."
     },
+    "tides": {
+      "value": true, "status": "assumed",
+      "note": "Three tides: the inland milestone sends the undrawn coastal tier-1 cards out of the game; the first highland village on the network (or the coastal deck running out) opens the highland to starting cards and sends the undrawn inland tier-1 cards out. brainstorm-stage-3.md 10.2"
+    },
+    "tideReward": {
+      "value": "+1C", "status": "assumed",
+      "note": "What the player who turns the third tide by linking a highland village takes (the second tide comes with the milestone, which has milestoneReward)."
+    },
     "multiplierSteps": {
       "value": "0:1,1:2,4:3,7:4,10:5", "status": "assumed",
       "note": "Each colour's multiplier in steps: \"count:multiplier\" pairs, the highest count reached applies (0 gives x1, 1-3 x2, 4-6 x3, 7-9 x4, 10 or more x5). Blank: the weighted count itself (up to multiplierCap). brainstorm-stage-3.md 6.2"
