@@ -240,7 +240,11 @@ export function rulesView(game, extra = {}) {
             h("i", {}, "Barge"), " (one toll fewer on each build), ",
             h("i", {}, "Reserve"), " (1 pearl: set a display card aside for you alone), ",
             h("i", {}, "Granary"), " (its slot gives 2 income) and ",
-            h("i", {}, "Diving"), " (pearl threshold 1 lower; hold 2 more pearls)."] : "") : null,
+            h("i", {}, "Diving"), " (pearl threshold 1 lower; hold 2 more pearls).",
+            c.techBoard !== "level1" ? [" The outer ring holds four ", h("b", {}, "board boosts"),
+              " (Relay, Yard, Barter, Larder): printed boosts for a colour, used instead of the card's own boost, never both."] : "",
+            c.techBoard === "full" ? [" ", h("b", {}, "Capstones. "), "The first player to empty all three slots of a sector takes its capstone: ",
+              Object.values(E.CAPSTONES).map((x, i, a) => [h("i", {}, x.name), ` (${x.text.replace(/\.$/, "")})`, i < a.length - 1 ? "; " : "."])] : ""] : "") : null,
         h("p", { class: "muted" }, "Hover a building on the board for its rule. Building something other than an extractor on a forest, mountain or clay bed uses the resource up."),
       ] : h("p", {}, `Every building scores ${c.vpPerBuilding} VP and raises your income by ${c.incomePerBuilding}.`)),
 

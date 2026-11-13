@@ -294,6 +294,15 @@ export function renderTechBoard(state, pi, size = 15) {
   }
   const pad = size + 2;
   svg.setAttribute("viewBox", `${Math.min(...xs) - pad} ${Math.min(...ys) - pad} ${Math.max(...xs) - Math.min(...xs) + 2 * pad} ${Math.max(...ys) - Math.min(...ys) + 2 * pad}`);
+  // Capstones: a ring on the outer edge of a sector its holder finished.
+  for (const [sector, owner] of Object.entries(state.capstones || {})) {
+    if (owner !== pi) continue;
+    const i = state.tech.sectors.indexOf(sector), [cx, cy] = pos(...place(`C${i}`));
+    const g = el("g", {}, svg);
+    el("circle", { cx, cy, r: size * 0.55, fill: "#f6d77a", stroke: "#7a5f2a", "stroke-width": 1.2 }, g);
+    el("text", { x: cx, y: cy + size * 0.2, "text-anchor": "middle", "font-size": size * 0.55, class: "tech-name" }, g).textContent = "★";
+    el("title", {}, g).textContent = `${E.CAPSTONES[sector]?.name}: ${E.CAPSTONES[sector]?.text}`;
+  }
   svg.setAttribute("class", "tech-board");
   svg.setAttribute("style", `--pc:${p.colour}`);
   svg.setAttribute("role", "img");

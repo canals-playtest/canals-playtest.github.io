@@ -476,7 +476,7 @@ function log(state, msg) { if (!state.quiet) state.log.push({ round: state.round
 export function cloneState(state, rng) {
   const c = { ...state, quiet: true, log: [], history: [] };
   const deep = structuredClone({ dug: state.dug, buildings: state.buildings, claimed: state.claimed, cubes: state.cubes,
-    supply: state.supply, crossings: state.crossings, tokenClaimed: state.tokenClaimed, players: state.players, market: state.market, trash: state.trash, turn: state.turn });
+    supply: state.supply, crossings: state.crossings, tokenClaimed: state.tokenClaimed, capstones: state.capstones || {}, players: state.players, market: state.market, trash: state.trash, turn: state.turn });
   Object.assign(c, deep);
   if (rng !== undefined) c.rng = (rng >>> 0) || 1;
   return c;
@@ -554,6 +554,23 @@ export const techOn = (state) => !!state.tech;
 const TECH_LEVEL = { income: 0, level1: 1, level2: 2, full: 3 };
 /** How far the board is played: 0 tokens and income, 1 inner technologies, 2 outer ones too, 3 capstones. */
 export const techLevel = (state) => (state.tech ? TECH_LEVEL[state.config.techBoard] ?? 0 : -1);
+
+/**
+ * Capstones (brainstorm-stage-3.md 5.5): the first player to empty all three
+ * slots of a sector takes its tile. "One more card" tiles count two, as
+ * multipliers go in steps.
+ */
+export const CAPSTONES = {
+  Channels: { name: "Navigator", text: "Highland and marsh hexes count 1 more in your Reach." },
+  Works: { name: "Architect", text: "4 VP of building score." },
+  Barges: { name: "Harbour master", text: "Counts as two more Buy cards." },
+  Market: { name: "Patron", text: "Counts as two more Build cards." },
+  Stores: { name: "Treasurer", text: "If you own two or more Earn cards, counts as two more cards of the colour that scores you most (not Dig)." },
+  Pearls: { name: "Pearl diver", text: "Each pearl you hold at the end counts as 1 Reach, up to 4." },
+};
+
+/** The sectors whose capstone player pi holds. */
+export const capstonesOf = (state, pi) => Object.keys(state.capstones || {}).filter((k) => state.capstones[k] === pi);
 
 /** Has player pi this technology (its slot emptied, at a level that plays it)? */
 export function hasTech(state, pi, tech) {
@@ -1307,6 +1324,12 @@ export function build(state, hk, typeId, slotId = undefined) {
   const extras = [`+${inc} income`];
   if (slot) {
     p.taken.push(slot.id);
+    const sector = techSlot(state, slot.id).sector;
+    if (techLevel(state) >= 3 && (state.capstones ||= {})[sector] === undefined
+      && state.tech.slots.filter((x) => x.sector === sector).every((x) => p.taken.includes(x.id))) {
+      state.capstones[sector] = state.current;
+      extras.push(`the ${CAPSTONES[sector]?.name || sector} capstone`);
+    }
     if (techSlot(state, slot.id).tech === "survey" && techLevel(state) >= 2) {
       p.handSize = Math.min(state.config.handSizeCap || Infinity, p.handSize + 1);
       extras.push(`Survey: hand size ${p.handSize}`);
@@ -1769,6 +1792,24 @@ export function nextStep(cfg, count) {
   return n ? { at: n[0], m: n[1] } : null;
 }
 
+/** Reach from capstones: Navigator (highland and marsh hexes 1 more), Pearl diver (pearls held, up to 4). */
+function capReach(state, pi, caps) {
+  let n = 0;
+  if (caps.includes("Pearls")) n += Math.min(4, state.players[pi].pearls || 0);
+  if (caps.includes("Channels")) {
+    const link = linkedNetwork(state), net = networkHexes(state, link), touched = new Set();
+    for (const [ek, o] of Object.entries(state.dug)) {
+      if (o !== pi || !link.edges.has(ek)) continue;
+      const e = state.board.edges[ek]; touched.add(e.a); touched.add(e.b);
+    }
+    for (const hk of touched) {
+      const h = state.board.hexes[hk];
+      if (isOpened(state, hk, net) && (h.band === "highland" || h.feature === "marsh")) n++;
+    }
+  }
+  return n;
+}
+
 export function score(state, pi) {
   const p = state.players[pi];
   const cfg = state.config;
@@ -1776,15 +1817,18 @@ export function score(state, pi) {
   let deckScore = 0;
   const weight = cardWeights(state);
   for (const uid of ownedCards(p)) { const d = def(state, uid); counts[d.role] += weight(d); deckScore += d.vp; }
+  const caps = state.capstones ? capstonesOf(state, pi) : [];
+  if (caps.includes("Barges")) counts.buy += 2;
+  if (caps.includes("Market")) counts.build += 2;
   const m = (r) => multiplier(cfg, counts[r]);
 
-  let buildingScore = 0;
+  let buildingScore = caps.includes("Works") ? 4 : 0;
   for (const [hk, list] of Object.entries(state.buildings)) {
     for (const b of list) if (b.p === pi) buildingScore += buildingVP(state, hk, b);
   }
   const network = cfg.networkScore === "crossings"
     ? { score: "Crossings", s: state.crossings.reduce((a, c) => a + c.edges.filter((ek) => state.dug[ek] === pi).length, 0) }
-    : { score: "Reach", s: reachPoints(state, pi) };
+    : { score: "Reach", s: reachPoints(state, pi) + capReach(state, pi, caps) };
 
   const lanes = [
     { mult: "dig", m: m("dig"), score: "Buildings", s: buildingScore },
@@ -1792,6 +1836,16 @@ export function score(state, pi) {
     { mult: "buy", m: m("buy"), ...network },
     { mult: "special", m: m("special"), score: "Keys", s: p.keys * cfg.vpPerKey },
   ].map((l) => ({ ...l, total: l.m * l.s }));
+  // Treasurer: two more cards of the colour that gains most, not Dig.
+  if (caps.includes("Stores") && ownedCards(p).filter((u) => def(state, u).role === "earn").length >= 2) {
+    let best = null, gainBest = 0;
+    for (const l of lanes) {
+      if (l.mult === "dig") continue;
+      const g = multiplier(cfg, counts[l.mult] + 2) * l.s - l.total;
+      if (g > gainBest || !best) { best = l; gainBest = g; }
+    }
+    counts[best.mult] += 2; best.m = multiplier(cfg, counts[best.mult]); best.total = best.m * best.s; best.treasurer = true;
+  }
   return { counts, lanes, total: lanes.reduce((a, l) => a + l.total, 0), money: p.money };
 }
 

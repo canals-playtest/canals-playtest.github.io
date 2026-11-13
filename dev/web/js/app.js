@@ -169,7 +169,7 @@ function setData(d) {
 
 // Bumped when a default changes, so a setup saved in this browser earlier
 // picks up the new value instead of silently keeping the old one.
-const SETUP_VERSION = 10;
+const SETUP_VERSION = 11;
 // The connection rule became settled (2); building types became the working rule (3);
 // the inland milestone replaced the first-opened-hex unlock (4); the game ends by
 // trigger, with rounds a cap, and the pearl track came in (6).
@@ -919,7 +919,8 @@ function renderGame(newTurn = false) {
           return h("span", { title: `${ROLES[l.mult].label} multiplier × ${l.score}${steps}` }, icon(ROLE_ICON[l.mult]), `${l.m}×${l.s}`);
         }), h("b", {}, ` = ${sc.total}`)),
       E.techOn(state) ? h("details", { class: "tech", open: i === state.current || null },
-        h("summary", {}, `Board: ${state.tech.slots.length - (pl.taken || []).length} buildings left`),
+        h("summary", {}, `Board: ${state.tech.slots.length - (pl.taken || []).length} buildings left`,
+          E.capstonesOf(state, i).map((k) => h("span", { class: "pill", title: E.CAPSTONES[k].text }, ` ★ ${E.CAPSTONES[k].name}`))),
         renderTechBoard(state, i)) : null);
   });
 

@@ -238,6 +238,9 @@ export function techValue(st, pi, typeId, left) {
   // The technology itself, in rough money over the game left (Granary is in the income above).
   if (E.techLevel(st) >= (x.ring === "inner" ? 1 : 2)) v += (TECH_WORTH[x.tech] || 0) * left;
   const taken = st.players[pi].taken;
+  // A capstone: this token empties a sector nobody has finished.
+  if (E.techLevel(st) >= 3 && st.capstones?.[x.sector] === undefined
+    && st.tech.slots.filter((y) => y.sector === x.sector && y.id !== slot.id).every((y) => taken.includes(y.id))) v += 6 + 6 * left;
   const opens = st.tech.adj[slot.id].filter((n) => n !== "centre" && !taken.includes(n) && !E.slotReachable(st, pi, n));
   return v + 0.4 * opens.length * left;
 }
