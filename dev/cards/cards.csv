@@ -28,21 +28,21 @@ i-spc-1,inland,Owl,Special,+1S,D3,+2M,7,5,1,,Keeps counsel and keeps watch.,Only
 i-spc-2,inland,Fox,Special,Dig 1. 1T,D2,+1D,5,4,1,any,Takes the shortest way.,
 i-spc-3,inland,Stag,Special,Build 1. +1H,D2,+1B,5,4,2,,Walks where the maps end.,
 c2-dig-1,coastal-2,Cormorant,Dig,Dig 2. -1DC,D,+1D/D,6,1,3,,Dives where others wade.,"Two digs and a discount on every dig, from one card: twice a starter dig. Discarding adds a dig per card."
-c2-dig-2,coastal-2,Lobster,Dig,Dig 2,XE,+2D,5,1,2,coastal,Tunnels under the tideline.,Turns a spare Earn card into two more digs; a land animal on the coast.
+c2-dig-2,coastal-2,Lobster,Dig,Dig 2,XE,+2D,5,1,3,coastal,Tunnels under the tideline.,Turns a spare Earn card into two more digs; a land animal on the coast.
 c2-bld-1,coastal-2,Kingfisher,Build,Build 2. -1BC,D2,+1B,6,1,3,,Builds a bank house in a morning.,"Two builds, each 1 cheaper: twice the Water Vole."
-c2-bld-2,coastal-2,Wren,Build,Build 1. -2BC. +1I,D,-1BC/D,5,1,2,,Small house; warm hearth.,A cheap build that also advances income.
+c2-bld-2,coastal-2,Wren,Build,Build 1. -2BC. +1I,D,-1BC/D,5,1,3,,Small house; warm hearth.,A cheap build that also advances income.
 c2-buy-1,coastal-2,Pelican,Buy,Buy 2. -1CC,D,-1CC/D,6,1,2,,Takes the whole catch home.,"Two buys, each 1 cheaper, and cheaper still per discard."
-c2-buy-2,coastal-2,Heron,Buy,Buy 1. +2PT,D2,+1P,5,1,2,,Stands still until the moment comes.,Pearl-friendly: two spaces on the pearl track as if two more cards were kept; a pearl outright with a boost.
+c2-buy-2,coastal-2,Heron,Buy,Buy 1. +2PT,D2,+1P,5,1,3,,Stands still until the moment comes.,Pearl-friendly: two spaces on the pearl track as if two more cards were kept; a pearl outright with a boost.
 c2-ern-1,coastal-2,Puffin,Earn,Earn 2,D2,+1I,5,,3,,Brings back a beakful.,Takes income twice: late-game income makes this the strongest money card.
-c2-spc-1,coastal-2,Gannet,Special,Dig 2. 1T. +1H,D2,+1D,7,5,1,coastal,Plunges straight to the point.,Digs and thins the deck in one card.
-c2-spc-2,coastal-2,Dipper,Special,Earn 1. 2T. +1P,D2,+2M,6,5,2,,Walks the riverbed and comes back with something.,"The trashing card: clear two starters, and a pearl at the end of the turn."
+c2-spc-1,coastal-2,Gannet,Special,Dig 2. 1T. +1H,D2,+1D,7,5,3,coastal,Plunges straight to the point.,Digs and thins the deck in one card.
+c2-spc-2,coastal-2,Dipper,Special,Earn 1. 2T. +1P,D2,+2M,6,5,3,,Walks the riverbed and comes back with something.,"The trashing card: clear two starters, and a pearl at the end of the turn."
 i2-dig-1,inland-2,Marmot,Dig,Dig 3. -1DC,D2,+2D,8,2,3,inland,Whole valleys of burrows.,"Three digs at a discount, five with a boost: the deep-inland push."
-i2-dig-2,inland-2,Mole Cricket,Dig,Dig 2. -2DC,D,+1D/D,7,1,2,,Shovels for hands.,Cheap digs: 2 off each.
+i2-dig-2,inland-2,Mole Cricket,Dig,Dig 2. -2DC,D,+1D/D,7,1,3,,Shovels for hands.,Cheap digs: 2 off each.
 i2-bld-1,inland-2,Wood Ant,Build,Build 2. -2BC,D2,+1B,8,2,3,,A city by midsummer.,"Two builds, 2 off each, a third with a boost."
-i2-bld-2,inland-2,Weaver,Build,Build 2. +1I,XD,+1B,7,1,2,,Knots a home from reeds.,Builds and grows income; a spare Dig card buys a third build.
+i2-bld-2,inland-2,Weaver,Build,Build 2. +1I,XD,+1B,7,1,3,,Knots a home from reeds.,Builds and grows income; a spare Dig card buys a third build.
 i2-buy-1,inland-2,Rook,Buy,Buy 2. -2CC,D2,+1C,7,1,2,,The parliament decides.,"Two buys at 2 off each, three with a boost."
 i2-ern-1,inland-2,Chipmunk,Earn,Earn 2. +1I,D2,+1E,7,,2,,Cheeks full for winter.,Income twice and up one; three times with a boost.
 i2-ern-2,inland-2,Hedgehog,Earn,Earn 1. +1I. +3PT,D2,+1P,6,,2,,Curls up and waits out the winter.,"Pearl-friendly: income, and three spaces on the pearl track; a pearl outright with a boost."
-i2-spc-1,inland-2,Golden Eagle,Special,Build 2. +1H,D2,+1B,9,7,1,,Sees every site at once.,The top building special.
-i2-spc-2,inland-2,Elk,Special,+1S. Dig 2,D3,+2D,9,7,1,inland,Breaks trail for the herd.,A permanent hand size and two digs; four with a big boost.
-i2-spc-3,inland-2,Lynx,Special,Buy 1. 2T. +3M,D2,-2CC,8,6,2,,Takes only the best.,"Buy the best card, trash two weak ones, and get paid."
+i2-spc-1,inland-2,Golden Eagle,Special,Build 2. +1H,D2,+1B,9,7,3,,Sees every site at once.,The top building special.
+i2-spc-2,inland-2,Elk,Special,+1S. Dig 2,D3,+2D,9,7,2,inland,Breaks trail for the herd.,A permanent hand size and two digs; four with a big boost.
+i2-spc-3,inland-2,Lynx,Special,Buy 1. 2T. +3M,D2,-2CC,8,6,3,,Takes only the best.,"Buy the best card, trash two weak ones, and get paid."
