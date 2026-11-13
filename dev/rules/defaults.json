@@ -58,8 +58,8 @@
       "note": "Each player is assigned a harbour at setup (spread along the coast, in seat order). Starting dig cards may only start at your own harbour's mouth or share a corner with one of your own sea-linked canals; market dig cards may join anyone's network, as all digs did up to playtest-v1. docs/next-version.md section 5"
     },
     "endKeysShare": {
-      "value": 0.5, "status": "assumed",
-      "note": "The share of the key tiles endOnKeys counts (endKeysBand) that must be on the network for the game to end, rounded up: 1 is all of them, 0.5 half. With all five highland villages at four players the ending fired in 1 game of 12 (2.6 linked at the end on average); with half, in 4 of 12. docs/simulation.md"
+      "value": 1, "status": "assumed",
+      "note": "Raised to 1 on 2026-11-13 with the stage-3 rules, board and tides: at 0.5 games ran 30.6 rounds at four players and 26.5 at five, nearly all ending by keys; at 1, 35.7 and 36.3, the endings 3/13 and 6/6 keys/market. 0.85 asks as many villages as 1, and 0.8 as many as 0.7, at four and five players. The share of the key tiles endOnKeys counts (endKeysBand) that must be on the network for the game to end, rounded up: 1 is all of them, 0.5 half. With all five highland villages at four players the ending fired in 1 game of 12 (2.6 linked at the end on average); with half, in 4 of 12. docs/simulation.md"
     },
     "siteTokens": {
       "value": "Spring=+1I:3:coast/inland; Ruins=+3M:4:coast; Ruins=2T:3:inland; Old lock=+1D:2:inland; Hoard=+1P:2:inland/highland", "status": "assumed",
