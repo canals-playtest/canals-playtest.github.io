@@ -88,6 +88,11 @@ export const PLANS = {
   "lane-reach": plan({ early: [0, 0, 1, 0] }),
   "lane-keys": plan({ early: [0, 0, 0, 1] }),
   "lane-even": plan({ early: [1, 1, 1, 1] }),
+  // Leaning plans (balance-aims.md 5.2): two parts one lane, one part each of the others.
+  "lean-buildings": plan({ early: [2, 1, 1, 1] }),
+  "lean-deck": plan({ early: [1, 2, 1, 1] }),
+  "lean-reach": plan({ early: [1, 1, 2, 1] }),
+  "lean-keys": plan({ early: [1, 1, 1, 2] }),
 };
 
 let ELITE = {};
