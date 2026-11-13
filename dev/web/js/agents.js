@@ -58,13 +58,14 @@ export function randomTurn(s, rnd) {
   if (s.turn?.phase === "harbour") return E.chooseHarbour(s, pick(E.draftChoices(s)));
   const p = E.currentPlayer(s);
   if (!p.hand.length) return E.pass(s);
+  if (rnd() < 0.05 && E.canForage(s, "hand").ok) return E.forage(s, rnd() < 0.5 ? "hand" : pick(p.hand));
   const uid = pick(p.hand);
   E.playCard(s, uid, pick(boostChoices(s, uid, p.hand.filter((u) => u !== uid))));
   for (let guard = 0; guard < 20; guard++) {
     const opts = [];
     for (const ek of Object.keys(s.board.edges)) if (E.canDig(s, ek).ok) opts.push(() => E.dig(s, ek));
     for (const hk of Object.keys(s.board.hexes)) for (const bt of s.buildingTypes) if (E.canBuild(s, hk, bt.id).ok) opts.push(() => E.build(s, hk, bt.id));
-    E.marketCards(s).forEach((_, i) => E.canBuy(s, i).ok && opts.push(() => E.buy(s, i)));
+    E.marketCards(s).forEach((_, i) => E.canBuy(s, i).ok && opts.push(() => E.buy(s, i, rnd() < 0.3 && E.canBuy(s, i, true).ok)));
     for (const u of p.discard) if (E.canTrash(s, u, "discard").ok && rnd() < 0.3) opts.push(() => E.trash(s, u, "discard"));
     if (!opts.length) break;
     pick(opts)();
@@ -213,7 +214,11 @@ function greedyActions(s) {
         const sc = d.cost + (d.role === "special" ? 5 : 0) + d.vp;
         if (sc > bestScore) { bestScore = sc; best = i; }
       });
-      if (best !== null) { E.buy(s, best); continue; }
+      if (best !== null) {
+        const d = E.def(s, E.marketCards(s)[best]);
+        E.buy(s, best, (d.cost >= 5 || d.role === "special") && d.role !== "earn" && E.canBuy(s, best, true).ok && E.roundsLeft(s) > 2);
+        continue;
+      }
     }
     // Trash: starting Earn cards once the deck has another Earn card.
     const trashable = (src) => (src === "hand" ? p.hand : p.discard).find((u) => E.canTrash(s, u, src).ok && s.cards[u].startsWith("start-earn"));
@@ -258,11 +263,7 @@ export const getLanePrior = () => ({ ...lanePrior });
 /** Each scoring colour's expected final count for player pi. */
 export function expectedCounts(s, pi, counts = E.score(s, pi).counts) {
   const done = s.round - 1, f = done / Math.max(1, done + E.roundsLeft(s));
-  const cap = s.config.multiplierCap;
-  return Object.fromEntries(LANE_ROLES.map((r) => {
-    const v = counts[r] + (1 - f) * lanePrior[r];
-    return [r, cap > 0 ? Math.min(cap, v) : v];
-  }));
+  return Object.fromEntries(LANE_ROLES.map((r) => [r, E.smoothMultiplier(s.config, counts[r] + (1 - f) * lanePrior[r])]));
 }
 
 export function greedyTurn(s) {
@@ -288,6 +289,19 @@ export function greedyTurn(s) {
       if (v > bestVal) { bestVal = v; best = [uid, disc]; }
     }
   }
+  // Forage (brainstorm-stage-3.md 6.3): one card face down, or the whole hand.
+  // Only as a lifeline: one turn ahead, money looks better than what an action
+  // builds, so greedy forages only when its best play gains nothing on standing still.
+  let foraged = null;
+  if (bestVal > value(JSON.parse(base), me) + 0.5) bestVal = Infinity;
+  for (const uid of [...new Set(p.hand.map((u) => s.cards[u]))].map((id) => p.hand.find((u) => s.cards[u] === id)).concat(["hand"])) {
+    if (!E.canForage(s, uid).ok) continue;
+    const c = JSON.parse(base);
+    E.forage(c, uid);
+    const v = value(c, me);
+    if (v > bestVal) { bestVal = v; foraged = uid; }
+  }
+  if (foraged !== null) return E.forage(s, foraged);
   E.playCard(s, ...best);
   greedyActions(s);
   return E.endTurn(s);

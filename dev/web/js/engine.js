@@ -397,8 +397,7 @@ export function createGame(data, config = {}) {
   // Market (docs/cards.md): a coastal and an inland deck, each tiered
   // (coastal-2 under coastal). The inland cards form their own display when
   // the inland opens (inlandDisplay), or shuffle into the coastal deck.
-  const market = cfg.market ||
-    Object.fromEntries(Object.values(defs).filter((d) => d.deck !== "starting").map((d) => [d.id, d.copies]));
+  const market = cfg.market || scaledMarket(defs, cfg.deckSizes, names.length);
   const piles = { coastal: [], inland: [] };
   for (const [id, n] of Object.entries(market)) {
     const d = defs[id];
@@ -492,6 +491,33 @@ function drawTo(state, p, n) {
     }
     p.hand.push(p.draw.pop());
   }
+}
+
+/**
+ * The market's copies at this player count (rule deckSizes, "deck=2p/3p/4p/5p, ...").
+ * Copies are cut, never designs: Earn first, then the design with the most
+ * copies (ties by file order), each design keeping at least one.
+ */
+export function scaledMarket(defs, deckSizes, players) {
+  const all = Object.values(defs).filter((d) => d.deck !== "starting");
+  const market = Object.fromEntries(all.map((d) => [d.id, d.copies]));
+  for (const part of String(deckSizes || "").split(",")) {
+    const [deck, sizes] = part.split("=").map((x) => (x || "").trim());
+    if (!deck || !sizes) continue;
+    const list = sizes.split("/").map(Number);
+    const target = list[Math.min(list.length - 1, Math.max(0, players - 2))];
+    const designs = all.filter((d) => d.deck === deck);
+    let total = designs.reduce((a, d) => a + market[d.id], 0);
+    while (total > target) {
+      const cuttable = designs.filter((d) => market[d.id] > 1);
+      if (!cuttable.length) break;
+      const earn = cuttable.filter((d) => d.role === "earn");
+      const from = earn.length ? earn : cuttable;
+      const d = from.reduce((a, b) => (market[b.id] > market[a.id] ? b : a));
+      market[d.id]--; total--;
+    }
+  }
+  return market;
 }
 
 /** The siteTokens rule: [{ name, code, copies, bands }]. */
@@ -1176,30 +1202,40 @@ export function buyCost(state, uid) {
   return Math.max(0, def(state, uid).cost - (state.turn?.pool?.buyDiscount || 0));
 }
 
-export function canBuy(state, slot) {
+/** What putting a bought card on top of the draw pile adds (rule buyOnTopCost), or null if not allowed. */
+export function topCost(state) {
+  const c = state.config.buyOnTopCost;
+  if (c === undefined || c === null || c < 0) return null;
+  return state.turn?.pool?.freeTop ? 0 : c;
+}
+
+export function canBuy(state, slot, top = false) {
   const t = state.turn, p = currentPlayer(state);
   const uid = marketCards(state)[slot];
   if (!uid) return fail("empty slot");
   if (t.phase !== "resolve" || (t.pool.buy || 0) < 1) return fail("no buy available");
-  if (p.money < buyCost(state, uid)) return fail("not enough money");
+  if (top && topCost(state) === null) return fail("bought cards go to the discard pile");
+  if (p.money < buyCost(state, uid) + (top ? topCost(state) : 0)) return fail("not enough money");
   return OK;
 }
 
-export function buy(state, slot) {
-  const ok = canBuy(state, slot);
+/** Buy the card in a market slot; `top`: pay topCost more and put it on top of your draw pile. */
+export function buy(state, slot, top = false) {
+  const ok = canBuy(state, slot, top);
   if (!ok.ok) return ok;
   const t = state.turn, p = currentPlayer(state);
   const m = state.market, uid = marketCards(state)[slot];
   const d = def(state, uid);
-  const cost = buyCost(state, uid);
+  const extra = top ? topCost(state) : 0;
+  const cost = buyCost(state, uid) + extra;
   t.pool.buy--;
   p.money -= cost; p.stats.spent += cost; p.stats.buys++;
-  p.discard.push(uid);
+  if (top) { p.draw.push(uid); p.stats.onTop = (p.stats.onTop || 0) + 1; } else p.discard.push(uid);
   if (slot < m.display.length) { m.display.splice(slot, 1); m.bought.coastal = true; }
   else { m.inlandDisplay.splice(slot - m.display.length, 1); m.bought.inland = true; }
   restock(state);
-  t.actions.push({ type: "buy", card: d.id, cost });
-  log(state, `${p.name} buys ${displayName(d)} for ${cost}.`);
+  t.actions.push({ type: "buy", card: d.id, cost, ...(top ? { top: true } : {}) });
+  log(state, `${p.name} buys ${displayName(d)} for ${cost}${top ? `, onto their draw pile (+${extra})` : ""}.`);
   return OK;
 }
 
@@ -1299,6 +1335,41 @@ export function spendPearl(state, kind, uid) {
   return OK;
 }
 
+/**
+ * Forage instead of playing a card: discard one card face down for forageOne
+ * money, or the whole hand (uid "hand") for forageHand. The turn ends; no
+ * pearl track progress. brainstorm-stage-3.md 6.3
+ */
+export function canForage(state, uid) {
+  const t = state.turn, p = currentPlayer(state), cfg = state.config;
+  if (state.over || t?.phase !== "choose") return fail("not choosing a card");
+  if (uid === "hand") return cfg.forageHand > 0 && p.hand.length ? OK : fail("no foraging with the whole hand");
+  if (!(cfg.forageOne > 0)) return fail("no foraging");
+  return p.hand.includes(uid) ? OK : fail("card not in hand");
+}
+
+export function forage(state, uid) {
+  const ok = canForage(state, uid);
+  if (!ok.ok) return ok;
+  const t = state.turn, p = currentPlayer(state), cfg = state.config;
+  const cards = uid === "hand" ? [...p.hand] : [uid];
+  const amount = uid === "hand" ? cfg.forageHand : cfg.forageOne;
+  p.hand = p.hand.filter((u) => !cards.includes(u));
+  p.discard.push(...cards);
+  gain(p, amount);
+  p.stats.turns++;
+  p.stats.forage = (p.stats.forage || 0) + 1;
+  t.phase = "resolve";
+  t.forage = true;
+  t.discards = [];
+  t.pool = NEW_POOL();
+  t.actions.push({ type: "forage", cards: cards.length, money: amount });
+  log(state, uid === "hand"
+    ? `${p.name} forages with their whole hand (${cards.length} cards) for ${amount}.`
+    : `${p.name} forages: a card face down for ${amount}.`);
+  return endTurn(state);
+}
+
 export function pass(state) {
   const t = state.turn;
   if (t.phase !== "choose" || currentPlayer(state).hand.length) return fail("can only pass with an empty hand");
@@ -1317,7 +1388,8 @@ export function endTurn(state) {
   drawTo(state, p, p.handSize + (t.pool.extraDraw || 0));
   // Pearls are earned at the end of the turn, so not spendable until the next (docs/core-loop.md).
   if (state.config.pearls) {
-    if (state.config.pearlEarning === "track") advancePearlTrack(state, p, kept);
+    if (t.forage) { /* foraging: no pearl progress */ }
+    else if (state.config.pearlEarning === "track") advancePearlTrack(state, p, kept);
     else if (t.played && !t.discards.length && (p.pearls || 0) < state.config.pearlCap) {
       p.pearls = (p.pearls || 0) + 1;
       log(state, `${p.name} kept their cards: a pearl (${p.pearls}).`);
@@ -1458,6 +1530,48 @@ export function reachPoints(state, pi, net = networkHexes(state), link = linkedN
   return pts;
 }
 
+/** The multiplierSteps rule as [[count, multiplier], ...] by count, or null. */
+export function multiplierSteps(cfg) {
+  const key = String(cfg.multiplierSteps || "");
+  if (!key) return null;
+  if (STEPS_CACHE.has(key)) return STEPS_CACHE.get(key);
+  const steps = key.split(",").map((x) => x.split(":").map(Number)).filter(([a, m]) => Number.isFinite(a) && Number.isFinite(m)).sort((a, b) => a[0] - b[0]);
+  STEPS_CACHE.set(key, steps.length ? steps : null);
+  return STEPS_CACHE.get(key);
+}
+const STEPS_CACHE = new Map();
+
+/** A colour's multiplier from its weighted count: by steps, else the count (up to multiplierCap). */
+export function multiplier(cfg, count) {
+  const steps = multiplierSteps(cfg);
+  if (!steps) return cfg.multiplierCap > 0 ? Math.min(cfg.multiplierCap, count) : count;
+  let m = steps[0][0] <= count ? steps[0][1] : 0;
+  for (const [at, v] of steps) if (count >= at) m = v;
+  return m;
+}
+
+/**
+ * The same, smoothed for an expected (fractional) count: straight lines between
+ * the steps, so a bot sees each card bring the next step nearer.
+ */
+export function smoothMultiplier(cfg, x) {
+  const steps = multiplierSteps(cfg);
+  if (!steps) return cfg.multiplierCap > 0 ? Math.min(cfg.multiplierCap, x) : x;
+  if (x <= steps[0][0]) return steps[0][1];
+  for (let i = 1; i < steps.length; i++) {
+    const [a0, m0] = steps[i - 1], [a1, m1] = steps[i];
+    if (x < a1) return m0 + ((x - a0) / (a1 - a0)) * (m1 - m0);
+  }
+  return steps[steps.length - 1][1];
+}
+
+/** The next step up for a colour: { at, m } (count needed, multiplier then), or null. */
+export function nextStep(cfg, count) {
+  const steps = multiplierSteps(cfg);
+  const n = steps?.find(([at]) => at > count);
+  return n ? { at: n[0], m: n[1] } : null;
+}
+
 export function score(state, pi) {
   const p = state.players[pi];
   const cfg = state.config;
@@ -1465,7 +1579,7 @@ export function score(state, pi) {
   let deckScore = 0;
   const weight = cardWeights(state);
   for (const uid of ownedCards(p)) { const d = def(state, uid); counts[d.role] += weight(d); deckScore += d.vp; }
-  const m = (r) => (cfg.multiplierCap > 0 ? Math.min(cfg.multiplierCap, counts[r]) : counts[r]);
+  const m = (r) => multiplier(cfg, counts[r]);
 
   let buildingScore = 0;
   for (const [hk, list] of Object.entries(state.buildings)) {

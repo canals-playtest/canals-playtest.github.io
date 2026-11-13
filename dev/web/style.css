@@ -341,3 +341,5 @@ input.code-input { width: 7.5rem; text-transform: uppercase; letter-spacing: .1e
 .version-badge .dev { color: var(--warn); font-weight: 700; }
 .version-badge a { color: var(--accent); }
 .stat-line small.track { font-size: .72em; color: var(--muted); font-weight: 600; }
+.buy-top { display: block; margin: 4px 0 8px; font-size: .92em; }
+table.steps { border-collapse: collapse; margin: 6px 0; } table.steps th, table.steps td { border: 1px solid var(--line, #c9b99a); padding: 2px 8px; text-align: center; }

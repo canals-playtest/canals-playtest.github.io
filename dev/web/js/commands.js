@@ -25,7 +25,8 @@ export function validCommand(cmd) {
     case "play": return card(cmd.play) && Array.isArray(cmd.discards) && cmd.discards.length < 12 && cmd.discards.every(card);
     case "dig": return str(cmd.edge);
     case "build": return str(cmd.hex) && (cmd.kind === undefined || str(cmd.kind));
-    case "buy": return int(cmd.slot);
+    case "buy": return int(cmd.slot) && (cmd.top === undefined || typeof cmd.top === "boolean");
+    case "forage": return cmd.uid === "hand" || card(cmd.uid);
     case "trash": return card(cmd.uid) && (cmd.from === "hand" || cmd.from === "discard");
     case "pearl": return ["money", "redraw", "action"].includes(cmd.kind) && (cmd.uid === undefined || card(cmd.uid));
     case "end": case "pass": return true;
@@ -49,12 +50,13 @@ export function applyCommand(state, cmd) {
     case "dig": res = E.dig(state, cmd.edge); break;
     case "harbour": res = E.chooseHarbour(state, cmd.hex); ended = res.ok; break;
     case "build": res = E.build(state, cmd.hex, cmd.kind); break;
-    case "buy": res = E.buy(state, cmd.slot); reveals = true; break;
+    case "buy": res = E.buy(state, cmd.slot, !!cmd.top); reveals = true; break;
     case "trash": res = E.trash(state, cmd.uid, cmd.from); break;
     case "pearl": res = E.spendPearl(state, cmd.kind, cmd.uid); reveals = cmd.kind === "redraw"; break;
-    case "end": case "pass": {
+    case "end": case "pass": case "forage": {
       const me = E.currentPlayer(state);
-      res = cmd.type === "pass" ? E.pass(state) : E.endTurn(state);   // pass ends the turn itself
+      // pass and forage end the turn themselves
+      res = cmd.type === "pass" ? E.pass(state) : cmd.type === "forage" ? E.forage(state, cmd.uid) : E.endTurn(state);
       if (res.ok) { me.seen = state.log.length; ended = true; }       // their next recap starts here
       break;
     }

@@ -64,6 +64,7 @@ let state = null;         // engine state
 let undo = [];            // JSON snapshots within the current turn
 let sel = { play: null, discards: new Set() };
 let buildType = null;     // building type chosen in the picker
+let buyTop = false;       // put the next bought card on top of the draw pile (rule buyOnTopCost)
 let redrawing = false;    // a pearl redraw is waiting for a hand card
 let aiTimer = null;       // pending computer turn
 let aiFailed = null;      // why the last computer turn could not be played, if it couldn't
@@ -167,7 +168,7 @@ function setData(d) {
 
 // Bumped when a default changes, so a setup saved in this browser earlier
 // picks up the new value instead of silently keeping the old one.
-const SETUP_VERSION = 8;
+const SETUP_VERSION = 9;
 // The connection rule became settled (2); building types became the working rule (3);
 // the inland milestone replaced the first-opened-hex unlock (4); the game ends by
 // trigger, with rounds a cap, and the pearl track came in (6).
@@ -788,8 +789,16 @@ function renderGame(newTurn = false) {
       }));
     }
     if (sel.play === null) {
+      const cfg = state.config;
+      const forage = p.hand.length && (cfg.forageOne > 0 || cfg.forageHand > 0)
+        ? h("p", { class: "hint" }, "Or forage instead: ",
+          cfg.forageOne > 0 ? `select a card and discard it face down for ${cfg.forageOne} money` : "",
+          cfg.forageOne > 0 && cfg.forageHand > 0 ? ", or " : "",
+          cfg.forageHand > 0 ? h("button", { onclick: () => act({ type: "forage", uid: "hand" }) }, `discard your whole hand for ${cfg.forageHand}`) : "",
+          ". Foraging ends the turn and earns no pearl progress.")
+        : null;
       controls = h("div", { class: "controls" },
-        p.hand.length ? h("p", {}, "Choose a card to play.") : [h("p", {}, "Your hand is empty."), h("button", { onclick: () => act({ type: "pass" }) }, "Pass")]);
+        p.hand.length ? [h("p", {}, "Choose a card to play."), forage] : [h("p", {}, "Your hand is empty."), h("button", { onclick: () => act({ type: "pass" }) }, "Pass")]);
     } else {
       const d = E.def(state, sel.play), n = sel.discards.size;
       const legal = legalDiscardCount(d, n);
@@ -798,11 +807,17 @@ function renderGame(newTurn = false) {
       controls = h("div", { class: "controls" },
         h("p", {}, h("b", {}, displayName(d)), " — ", need, bc.kind !== "none" ? " Click other cards to discard them." : ""),
         h("p", { class: legal ? "" : "warn" }, legal ? `Gives: ${previewEffects(d, n)}` : `Can't discard ${n} for this boost.`),
-        h("button", { class: "primary", disabled: !legal, onclick: () => {
-          const play = sel.play, discards = [...sel.discards];
-          sel = { play: null, discards: new Set() };
-          act({ type: "play", play, discards });
-        } }, n ? `Play and discard ${n}` : "Play"));
+        h("div", { class: "row" },
+          h("button", { class: "primary", disabled: !legal, onclick: () => {
+            const play = sel.play, discards = [...sel.discards];
+            sel = { play: null, discards: new Set() };
+            act({ type: "play", play, discards });
+          } }, n ? `Play and discard ${n}` : "Play"),
+          state.config.forageOne > 0 && !n ? h("button", { title: "Discard this card face down for money instead of playing it. The turn ends, with no pearl progress.", onclick: () => {
+            const uid = sel.play;
+            sel = { play: null, discards: new Set() };
+            act({ type: "forage", uid });
+          } }, `Forage it for ${state.config.forageOne}`) : null));
     }
   } else {
     const trashHand = (t.pool.trashHand || 0) + (t.pool.trashAny || 0) > 0;
@@ -840,6 +855,7 @@ function renderGame(newTurn = false) {
 
   // Market
   const canBuy = acting && t.phase === "resolve" && t.pool.buy > 0;
+  const topExtra = E.topCost(state);
   const mk = state.market;
   const split = state.config.inlandDisplay;
   const tierLeft = (pile) => {
@@ -850,11 +866,12 @@ function renderGame(newTurn = false) {
   const leavesNext = (where) => clock === "always" || (clock === "unbought" && !mk.bought?.[where]);
   const row = (cards, offset) => h("div", { class: "hand" }, cards.map((uid, i) => {
     const d = E.def(state, uid), slot = offset + i;
-    const ok = canBuy && E.canBuy(state, slot).ok;
-    const cost = canBuy ? E.buyCost(state, uid) : d.cost;
+    const top = buyTop && topExtra !== null;
+    const ok = canBuy && E.canBuy(state, slot, top).ok;
+    const cost = canBuy ? E.buyCost(state, uid) + (top ? topExtra : 0) : d.cost;
     return cardView(d, { cls: ok ? "clickable buyable" : canBuy ? "dim" : "",
       badge: canBuy ? `pay ${cost}` : (i === 0 && leavesNext(offset === 0 ? "coastal" : "inland") ? "leaves next" : null),
-      onclick: ok ? () => act({ type: "buy", slot }) : null });
+      onclick: ok ? () => { buyTop = false; act({ type: "buy", slot, ...(top ? { top: true } : {}) }); } : null });
   }), cards.length ? null : h("div", { class: "card empty" }, "—"));
   const markets = h("div", { class: "market" },
     h("h3", {}, split ? "Coastal market " : "Market ", h("span", { class: "muted" },
@@ -862,6 +879,9 @@ function renderGame(newTurn = false) {
     E.inlandClosed(state) ? h("p", { class: "milestone" }, milestoneLine()) : null,
     state.config.materials && state.config.hauling !== "tolls" ? h("p", { class: "supply" }, h("b", {}, "Import market: "),
       E.RESOURCES.map((r) => `${r} ${state.supply[r]} left, next ${E.marketPrice(state, r)}`).join(" · ")) : null,
+    canBuy && topExtra !== null ? h("label", { class: "buy-top" },
+      h("input", { type: "checkbox", checked: buyTop || null, onchange: (e) => { buyTop = e.target.checked; renderGame(); } }),
+      ` Put the card I buy on top of my draw pile (${topExtra ? `+${topExtra} money` : "free"}): I draw it at the end of this turn.`) : null,
     row(mk.display, 0),
     split ? h("h3", {}, "Inland market ", h("span", { class: "muted" },
       state.inlandOpen ? `(${tierLeft(mk.inland)})` : `(${mk.inland.length} cards; opens with the inland)`)) : null,
@@ -878,7 +898,12 @@ function renderGame(newTurn = false) {
       statLine(pl, i, true),
       h("div", { class: "row wrap" }, Object.entries(sc.counts).filter(([, c]) => c).map(([r, c]) => h("span", { class: `pill c-${ROLES[r].colour}`, title: `${c} ${ROLES[r].label} card${c === 1 ? "" : "s"}` }, icon(ROLE_ICON[r]), ` ${c}`))),
       h("div", { class: "lanes", title: "each lane is cards × score; the total if the game ended now" },
-        sc.lanes.map((l) => h("span", { title: `${ROLES[l.mult].label} cards × ${l.score}` }, icon(ROLE_ICON[l.mult]), `${l.m}×${l.s}`)), h("b", {}, ` = ${sc.total}`)));
+        sc.lanes.map((l) => {
+          const next = E.nextStep(state.config, sc.counts[l.mult]);
+          const steps = E.multiplierSteps(state.config)
+            ? ` (${sc.counts[l.mult]} counted${next ? `; ×${next.m} at ${next.at}` : ", the top step"})` : "";
+          return h("span", { title: `${ROLES[l.mult].label} multiplier × ${l.score}${steps}` }, icon(ROLE_ICON[l.mult]), `${l.m}×${l.s}`);
+        }), h("b", {}, ` = ${sc.total}`)));
   });
 
   // What the others did since this player's last turn: with computers moving

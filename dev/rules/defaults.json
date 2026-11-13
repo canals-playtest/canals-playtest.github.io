@@ -197,6 +197,26 @@
       "value": 2, "status": "assumed",
       "note": "Pearls for one more dig, build or buy (the played card's kind), at full cost. Open question 40"
     },
+    "multiplierSteps": {
+      "value": "0:1,1:2,4:3,7:4,10:5", "status": "assumed",
+      "note": "Each colour's multiplier in steps: \"count:multiplier\" pairs, the highest count reached applies (0 gives x1, 1-3 x2, 4-6 x3, 7-9 x4, 10 or more x5). Blank: the weighted count itself (up to multiplierCap). brainstorm-stage-3.md 6.2"
+    },
+    "deckSizes": {
+      "value": "coastal=18/22/26/30, coastal-2=12/14/16/20, inland=12/15/19/23, inland-2=12/14/16/20", "status": "assumed",
+      "note": "Market cards per deck at 2/3/4/5 players. Copies are cut, never designs, Earn first, then the design with the most copies. Blank: every copy at every count. brainstorm-stage-3.md 7.1"
+    },
+    "buyOnTopCost": {
+      "value": 1, "status": "assumed",
+      "note": "Pay this much more to put a bought card on top of your draw pile (drawn at the end of the turn) instead of on your discard pile. -1: not allowed. brainstorm-stage-3.md 6.8"
+    },
+    "forageOne": {
+      "value": 2, "status": "assumed",
+      "note": "Instead of playing a card, discard one face down for this much money; the turn ends with no pearl track progress. 0: not allowed. brainstorm-stage-3.md 6.3"
+    },
+    "forageHand": {
+      "value": 3, "status": "assumed",
+      "note": "Or discard your whole hand for this much money; the turn ends with no pearl track progress. 0: not allowed."
+    },
     "multiplierCap": {
       "value": 0, "status": "assumed",
       "note": "Cap on each colour-count multiplier; 0 is uncapped. Open question 9"

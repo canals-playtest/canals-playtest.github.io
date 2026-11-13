@@ -201,7 +201,17 @@ function boostOptions(s, uid, rest) {
 
 export function legalMoves(s) {
   const hand = E.currentPlayer(s).hand;
-  return hand.flatMap((uid) => boostOptions(s, uid, hand.filter((u) => u !== uid)).map((opt) => ({ uid, opt })));
+  const moves = hand.flatMap((uid) => boostOptions(s, uid, hand.filter((u) => u !== uid)).map((opt) => ({ uid, opt })));
+  // Forage (brainstorm-stage-3.md 6.3): one card of each design face down, or the whole hand.
+  const seen = new Set();
+  for (const uid of hand) {
+    const id = s.cards[uid];
+    if (seen.has(id) || !E.canForage(s, uid).ok) continue;
+    seen.add(id);
+    moves.push({ uid, opt: "forage" });
+  }
+  if (hand.length > 1 && E.canForage(s, "hand").ok) moves.push({ uid: "hand", opt: "forage" });
+  return moves;
 }
 
 export class SearchBot {
@@ -247,8 +257,9 @@ export class SearchBot {
   }
 
   expectedCounts(st, pi, counts = E.score(st, pi).counts) {
-    const f = share(st), prior = pi === this.seat ? this.lanePrior : this.fieldPrior, cap = st.config.multiplierCap;
-    return Object.fromEntries(LANES.map((r) => { const v = counts[r] + (1 - f) * prior[r]; return [r, cap > 0 ? Math.min(cap, v) : v]; }));
+    // The expected multiplier: the count expected at the end, through the steps (smoothed).
+    const f = share(st), prior = pi === this.seat ? this.lanePrior : this.fieldPrior;
+    return Object.fromEntries(LANES.map((r) => [r, E.smoothMultiplier(st.config, counts[r] + (1 - f) * prior[r])]));
   }
 
   // ---- targets ---------------------------------------------------------- //
@@ -340,6 +351,7 @@ export class SearchBot {
     return best;
   }
 
+  /** [slot, top]: the card to buy, and whether to pay to put it on top of the draw pile. */
   pickBuy(st) {
     const p = E.currentPlayer(st), weight = E.cardWeights(st);
     let best = null, bestV = -1e9;
@@ -350,7 +362,12 @@ export class SearchBot {
       v += this.rng() * 0.4;
       if (v > bestV) { best = slot; bestV = v; }
     });
-    return best;
+    if (best === null) return null;
+    // On top: a dear action card (tier 2, a Special) is worth having next turn.
+    const uid = E.marketCards(st)[best], d = E.def(st, uid), tc = E.topCost(st);
+    const top = tc !== null && p.money >= E.buyCost(st, uid) + tc + 1 && d.role !== "earn"
+      && (d.cost >= 5 || d.role === "special") && E.roundsLeft(st) > 2;
+    return [best, top];
   }
 
   /** The least wanted card in the allowed piles; non-Earn cards only for a thinning bot. */
@@ -389,13 +406,14 @@ export class SearchBot {
 
   /** Play a move, then take its actions by this bot's targets: digs, builds, buys, trashes. */
   resolve(st, move) {
+    if (move.opt === "forage") return E.forage(st, move.uid);
     const discards = move.opt === 0 ? [] : this.pickDiscards(st, move.uid, move.opt);
     if (!E.playCard(st, move.uid, discards).ok) { E.playCard(st, move.uid, []); }
     this.spendPearls(st);
     const pool = st.turn.pool;
     for (let guard = 0; guard < 30 && pool.dig > 0; guard++) { const ek = this.pickDig(st); if (!ek || !E.dig(st, ek).ok) break; }
     for (let guard = 0; guard < 30 && pool.build > 0; guard++) { const x = this.pickBuild(st); if (!x || !E.build(st, ...x).ok) break; }
-    for (let guard = 0; guard < 30 && pool.buy > 0; guard++) { const x = this.pickBuy(st); if (x === null || !E.buy(st, x).ok) break; }
+    for (let guard = 0; guard < 30 && pool.buy > 0; guard++) { const x = this.pickBuy(st); if (x === null || !E.buy(st, ...x).ok) break; }
     for (let guard = 0; guard < 10; guard++) { const x = this.pickTrash(st); if (!x || !E.trash(st, ...x).ok) break; }
     return E.endTurn(st);
   }
@@ -403,7 +421,14 @@ export class SearchBot {
   // ---- move priors and rollouts ----------------------------------------- //
 
   prior(st, move) {
-    const p = E.currentPlayer(st), d = E.def(st, move.uid), cfg = st.config;
+    const p = E.currentPlayer(st), cfg = st.config;
+    if (move.opt === "forage") {
+      // A lifeline: worth it when broke, and cheapest with a card you don't want.
+      const broke = 1 - Math.min(p.money, 8) / 8;
+      if (move.uid === "hand") return -2.5 + 2.2 * broke - 0.15 * p.hand.length;
+      return -1.6 + 2.2 * broke - 0.25 * this.cardValue(st, move.uid);
+    }
+    const d = E.def(st, move.uid);
     let v = appetite(this.s, d.role) * 2;
     // Playing an action you cannot pay for wastes the turn outright.
     if (d.role === "dig") {

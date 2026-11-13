@@ -2,6 +2,7 @@
 // own settings (rules/defaults.json, or whatever the setup screen has), so the
 // text cannot drift from the table it describes.
 import { icon, ROLE_ICON, hasSymbol } from "./sprites.js";
+import * as E from "./engine.js";
 
 function h(tag, attrs = {}, ...kids) {
   const n = document.createElement(tag);
@@ -66,6 +67,7 @@ export function rulesView(game, extra = {}) {
   const sec = (id, ...kids) => h("section", { id: `rules-${id}` }, h("h2", {}, sections.find((s) => s[0] === id)[1]), ...kids);
   const glossaryItem = (id, title, text) => h("div", {}, icon(id), h("div", {}, h("b", {}, title), " ", text));
 
+  const steps = E.multiplierSteps(c);
   const lanes = [
     ["dig", "i-dig", "Dig cards", "×", "your buildings' VP", `Each building scores ${c.vpPerBuilding} VP${typed ? ", unless its type says otherwise" : ""}.`],
     ["build", "i-build", "Build cards", "×", "your deck's VP", "The VP printed on cards you own (Special cards carry it)."],
@@ -94,10 +96,16 @@ export function rulesView(game, extra = {}) {
         role("earn"),
         " cards score nothing; they are money. No colour multiplies a score its own action builds, so you always need two things at once: ",
         "the cards for a lane, and the work on the map or in the market that feeds it."),
-      h("div", { class: "box" }, h("b", {}, "Example. "), weighted
+      steps ? h("div", { class: "box" }, h("b", {}, "Multipliers in steps. "),
+        "Count a colour's cards (weighted as above), then read its multiplier off the steps: ",
+        h("table", { class: "steps" },
+          h("tr", {}, h("th", {}, "Count"), steps.map(([at], i) => h("td", {}, i + 1 < steps.length ? (steps[i + 1][0] - 1 > at ? `${at}–${steps[i + 1][0] - 1}` : `${at}`) : `${at}+`))),
+          h("tr", {}, h("th", {}, "Multiplier"), steps.map(([, m]) => h("td", {}, `×${m}`)))),
+        "Every lane scores at least once, and one more card can take you up a step.") : null,
+      !steps ? h("div", { class: "box" }, h("b", {}, "Example. "), weighted
         ? `You own 2 coastal and 1 inland Dig card (${2 * w("coastal")} + ${w("inland")} = ${2 * w("coastal") + w("inland")}) and buildings worth 10 VP: that lane scores ${2 * w("coastal") + w("inland")} × 10 = ${10 * (2 * w("coastal") + w("inland"))}. `
         : `You own 4 Dig cards and buildings worth 10 VP: that lane scores 4 × 10 = 40. `,
-        `With 3 Buy cards and a Reach of 6, the Reach lane scores 3 × ${6 * c.vpPerReach} = ${18 * c.vpPerReach}.`),
+        `With 3 Buy cards and a Reach of 6, the Reach lane scores 3 × ${6 * c.vpPerReach} = ${18 * c.vpPerReach}.`) : null,
       h("p", { class: "muted" }, "The player panels show each lane as cards × score, and the total if the game ended now.")),
 
     sec("stuff",
@@ -120,6 +128,11 @@ export function rulesView(game, extra = {}) {
           `, shuffles it and draws ${c.handSize}.`),
         h("li", {}, `Each player starts with ${c.startingPurse} money and income ${c.startingIncome}.`),
         c.ownHarbours ? h("li", {}, "Each player takes a harbour, spread along the coast in seat order (the first player the one furthest left). Any other harbours belong to nobody.") : null,
+        c.deckSizes ? h("li", {}, "Fewer players use fewer market cards. Before shuffling, set aside copies until each deck holds: ",
+          h("table", { class: "steps" }, h("tr", {}, h("th", {}, "Players"), [2, 3, 4, 5].map((n) => h("td", {}, n))),
+            String(c.deckSizes).split(",").map((part) => part.split("=").map((x) => x.trim())).filter(([d, v]) => d && v)
+              .map(([d, v]) => h("tr", {}, h("th", {}, d), v.split("/").map((n) => h("td", {}, n))))),
+          "Set aside Earn copies first, then from the design with the most copies; every design keeps at least one.") : null,
         h("li", {}, "Make the market decks. Shuffle the ", h("b", {}, "coastal"), " cards and the ", h("b", {}, "coastal-2"),
           " cards separately and stack the coastal cards on top; do the same with the ", h("b", {}, "inland"), " and ", h("b", {}, "inland-2"), " cards. ",
           `Lay ${c.displaySize} coastal cards face up. `, split ? "The inland deck waits face down until the inland opens." : "The inland deck waits until the inland opens, then joins the coastal deck."),
@@ -128,7 +141,12 @@ export function rulesView(game, extra = {}) {
     sec("turn",
       h("p", {}, "Players take turns in order. On your turn:"),
       h("ol", {},
-        h("li", {}, h("b", {}, "Play one card"), " from your hand."),
+        h("li", {}, h("b", {}, "Play one card"), " from your hand.",
+          c.forageOne > 0 || c.forageHand > 0 ? [" Or ", h("b", {}, "forage"), ": ",
+            c.forageOne > 0 ? `discard one card face down for ${c.forageOne} money` : "",
+            c.forageOne > 0 && c.forageHand > 0 ? ", or " : "",
+            c.forageHand > 0 ? `your whole hand for ${c.forageHand}` : "",
+            ". That is your turn: no actions, no boost, and no pearl track progress."] : ""),
         h("li", {}, h("b", {}, "Boost it if you like"), " by discarding other cards from your hand. The card says what a boost costs and gives: ",
           h("code", {}, "D2"), " means discard exactly two; ", h("code", {}, "D"), " means any number, with ", h("code", {}, "/D"), " effects counted per card; ",
           h("code", {}, "XD"), " means discard one Dig card (", h("code", {}, "XB"), " Build, ", h("code", {}, "XC"), " Buy, ", h("code", {}, "XE"), " Earn)."),
@@ -157,7 +175,8 @@ export function rulesView(game, extra = {}) {
         `Pay the hex's build cost (${cost("buildCost")})${typed ? ", plus the building type's extra cost" : ""}${mats ? ", plus the cubes it needs" : ""}. `,
         `Each building raises your income by ${c.incomePerBuilding}. A building on a key tile gives you a key. One building per hex.`),
       h("h3", {}, icon("i-buy"), "Buy"),
-      h("p", {}, "Buy one card from the market display: pay its cost and put it on your discard pile. The display refills at once."),
+      h("p", {}, "Buy one card from the market display: pay its cost and put it on your discard pile. The display refills at once.",
+        E.topCost({ config: c }) !== null ? ` Or pay ${c.buyOnTopCost} more to put it on top of your draw pile: you draw it at the end of the turn and can play it on the next.` : ""),
       h("h3", {}, icon("i-earn"), "Earn"),
       h("p", {}, "Take money equal to your income. ", h("code", {}, "Earn 1"), " pays it once."),
       h("h3", {}, icon("i-special"), "Special"),
