@@ -10,6 +10,7 @@
 //   { type: "pearl", kind: "money"|"redraw"|"action", uid }
 //   { type: "end" }                                end the turn
 //   { type: "pass" }                               end the turn with an empty hand
+//   { type: "harbour", hex }                       choose a harbour in the harbour draft
 import * as E from "./engine.js";
 
 const fail = (reason) => ({ ok: false, reason });
@@ -28,6 +29,7 @@ export function validCommand(cmd) {
     case "trash": return card(cmd.uid) && (cmd.from === "hand" || cmd.from === "discard");
     case "pearl": return ["money", "redraw", "action"].includes(cmd.kind) && (cmd.uid === undefined || card(cmd.uid));
     case "end": case "pass": return true;
+    case "harbour": return str(cmd.hex);
     default: return false;
   }
 }
@@ -45,6 +47,7 @@ export function applyCommand(state, cmd) {
   switch (cmd.type) {
     case "play": res = E.playCard(state, cmd.play, cmd.discards); break;
     case "dig": res = E.dig(state, cmd.edge); break;
+    case "harbour": res = E.chooseHarbour(state, cmd.hex); ended = res.ok; break;
     case "build": res = E.build(state, cmd.hex, cmd.kind); break;
     case "buy": res = E.buy(state, cmd.slot); reveals = true; break;
     case "trash": res = E.trash(state, cmd.uid, cmd.from); break;

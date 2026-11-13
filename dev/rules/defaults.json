@@ -81,6 +81,14 @@
       "value": "edge", "status": "assumed",
       "note": "\"edge\": a toll for every canal of someone else's on the route (the designer's rule); \"owner\": one toll per other player whose canals the route uses, however many (quicker to count at the table; brainstorm-stage-2-3.md 8.1)"
     },
+    "harbourDraft": {
+      "value": true, "status": "assumed",
+      "note": "Under ownHarbours: before the first turn, players choose their harbours in reverse seat order (the last seat first), instead of being assigned them. brainstorm-stage-3.md 6.5"
+    },
+    "harbourPremium": {
+      "value": 2, "status": "assumed",
+      "note": "Under harbourDraft: a deep harbour (at least two canals nearer the inland than the median harbour) costs this much of its player's starting money. brainstorm-stage-3.md 6.5"
+    },
     "reachBands": {
       "value": "1,1,2", "status": "assumed",
       "note": "Reach points for an opened hex by band: coast, inland, highland (terrain.csv `band`). 1,2,3 made the Reach lane carry the merchant bot (90% of its points, the best mean); 1,1,2 tones it down (docs/simulation.md). Blank: every hex scores vpPerReach, as up to stage 1. docs/next-version.md section 3"

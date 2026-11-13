@@ -55,6 +55,7 @@ function boostChoices(s, uid, rest) {
 
 export function randomTurn(s, rnd) {
   const pick = (a) => a[Math.floor(rnd() * a.length)];
+  if (s.turn?.phase === "harbour") return E.chooseHarbour(s, pick(E.draftChoices(s)));
   const p = E.currentPlayer(s);
   if (!p.hand.length) return E.pass(s);
   const uid = pick(p.hand);
@@ -265,6 +266,7 @@ export function expectedCounts(s, pi, counts = E.score(s, pi).counts) {
 }
 
 export function greedyTurn(s) {
+  if (s.turn?.phase === "harbour") return E.chooseHarbour(s, E.bestHarbour(s));
   const p = E.currentPlayer(s);
   if (!p.hand.length) return E.pass(s);
   const me = s.current;

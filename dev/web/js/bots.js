@@ -492,6 +492,7 @@ export class SearchBot {
 
   /** Take the current player's whole turn. */
   playTurn(st) {
+    if (st.turn?.phase === "harbour") return E.chooseHarbour(st, E.bestHarbour(st, this.rng));
     if (!E.currentPlayer(st).hand.length) return E.pass(st);
     const m = this.choose(st);
     this.seat = st.current;

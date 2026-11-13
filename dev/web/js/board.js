@@ -223,6 +223,18 @@ export function renderBoard(svg, state, handlers) {
     }
   }
 
+  // The harbour draft (stage 3): each free harbour is a target; a deep one costs a premium.
+  if (live && state.turn?.phase === "harbour" && handlers.onHarbour) {
+    for (const hk of E.draftChoices(state)) {
+      const [cx, cy] = centre(hexes[hk]), cost = E.harbourPremium(state, hk);
+      const g = el("g", { class: "harbour-choice" }, gTop);
+      el("circle", { cx, cy, r: S * 0.78, class: "harbour-ring" }, g);
+      if (cost) el("text", { x: cx, y: cy + S * 0.72, class: "bonus", "text-anchor": "middle" }, g).textContent = `−${cost}M`;
+      el("title", {}, g).textContent = `take this harbour${cost ? ` (deep: it costs ${cost} of your starting money)` : ""}`;
+      g.addEventListener("click", () => handlers.onHarbour(hk));
+    }
+  }
+
   // Harbour mouths: the corners where canals start. A corner sits at the
   // centroid of the three hex centres that meet there.
   for (const c of E.harbourMouths(state)) {

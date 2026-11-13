@@ -740,6 +740,7 @@ function renderGame(newTurn = false) {
   renderBoard(boardSvg, state, {
     onDig: (ek) => act({ type: "dig", edge: ek }),
     onBuild: (hk) => act({ type: "build", hex: hk, kind: buildType }),
+    onHarbour: (hk) => act({ type: "harbour", hex: hk }),
     buildType, interactive: acting,
   });
   if (net.role !== "local") document.title = acting ? "Your turn · Canals" : "Canals";
@@ -763,6 +764,14 @@ function renderGame(newTurn = false) {
         : h("p", { class: "thinking" }, `Waiting for ${p.name}… `),
       me && me !== p ? [h("h3", {}, `${whose(me.name)} hand `, h("span", { class: "muted" }, "(waiting)")),
         h("div", { class: "hand mini" }, me.hand.map((uid) => cardView(E.def(state, uid), { cls: "dim" })))] : null);
+  } else if (t.phase === "harbour") {
+    // The harbour draft: last seat chooses first; a deep harbour costs a premium.
+    controls = h("div", { class: "controls" },
+      h("p", {}, h("b", {}, "Choose your harbour."), " Click a ringed harbour on the map. The last seat chooses first; a deep harbour, one that reaches the inland in fewer canals, costs some of your starting money."),
+      h("div", { class: "row" }, E.draftChoices(state).map((hk) => {
+        const cost = E.harbourPremium(state, hk);
+        return h("button", { onclick: () => act({ type: "harbour", hex: hk }) }, `${hk}${cost ? ` (deep, −${cost} money)` : ""}`);
+      })));
   } else if (t.phase === "choose") {
     for (const uid of p.hand) {
       const d = E.def(state, uid);

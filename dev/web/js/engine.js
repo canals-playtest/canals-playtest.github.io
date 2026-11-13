@@ -417,7 +417,51 @@ export function createGame(data, config = {}) {
 
   log(state, `Game start: ${names.join(", ")}. Seed ${cfg.seed}.`);
   startTurn(state);
+  // The harbour draft: the last seat chooses first, then back to the first seat.
+  if (cfg.ownHarbours && cfg.harbourDraft && state.harbours.length) {
+    state.harbours = names.map(() => null);
+    state.draft = { order: names.map((_, i) => names.length - 1 - i) };
+    state.current = state.draft.order[0];
+    state.turn = { phase: "harbour", pool: {}, actions: [], discards: [] };
+    log(state, `Harbour draft: ${state.players[state.current].name} chooses first.`);
+  }
   return state;
+}
+
+/** Harbours still free in the draft. */
+export const draftChoices = (state) => Object.values(state.board.hexes)
+  .filter((h) => h.harbour && !state.harbours.includes(h.key)).map((h) => h.key);
+
+/** What a harbour costs in the draft: harbourPremium for a deep one (2+ canals nearer the inland than the median). */
+export function harbourPremium(state, hk) {
+  const r = (state.board.ratings ||= harbourRatings(state.board));
+  const ds = Object.values(r).map((x) => x.inland).sort((a, b) => a - b);
+  const median = ds[Math.floor(ds.length / 2)];
+  return r[hk] && r[hk].inland <= median - 2 ? state.config.harbourPremium : 0;
+}
+
+/** Choose a harbour in the draft. */
+export function chooseHarbour(state, hk) {
+  if (state.turn?.phase !== "harbour") return fail("not choosing harbours");
+  if (!draftChoices(state).includes(hk)) return fail("not a free harbour");
+  const p = currentPlayer(state), cost = harbourPremium(state, hk);
+  state.harbours[state.current] = hk;
+  p.money -= cost;
+  log(state, `${p.name} takes the harbour at ${hk}${cost ? `, paying ${cost} of their starting money: it is a deep harbour` : ""}.`);
+  const next = state.draft.order[state.draft.order.indexOf(state.current) + 1];
+  if (next === undefined) {
+    state.draft = null;
+    state.current = 0;
+    startTurn(state);
+  } else state.current = next;
+  return OK;
+}
+
+/** A computer player's harbour: nearest the inland, then most ground, less its premium. */
+export function bestHarbour(state, rnd = null) {
+  const r = (state.board.ratings ||= harbourRatings(state.board));
+  const val = (hk) => -r[hk].inland + 0.15 * r[hk].near - 0.5 * harbourPremium(state, hk) + (rnd ? rnd() * 0.5 : 0);
+  return draftChoices(state).sort((a, b) => val(b) - val(a))[0];
 }
 
 function log(state, msg) { if (!state.quiet) state.log.push({ round: state.round, msg }); }
@@ -941,13 +985,13 @@ function payTolls(state, p, picks) {
     p.stats.hauled[x.resource] = (p.stats.hauled[x.resource] || 0) + 1;
     if (x.fee && x.owner !== undefined && x.owner !== pi) credit(x.owner, x.fee, "fees");
     for (const [o, n] of Object.entries(x.owed || {})) credit(Number(o), n, "tolls");
-    // A Lock: every haul by another player through a canal on its borders pays its owner 1, from the bank.
+    // A Lock: every haul through a canal on its borders, its owner's included, pays its owner 1, from the bank.
     const paid = new Set();
     for (const ek of x.edges || []) {
       const e = state.board.edges[ek];
       for (const hk of [e.a, e.b]) {
         for (const b of state.buildings[hk] || []) {
-          if (btype(state, b.type).lock && b.p !== pi && !paid.has(`${hk}|${ek}`)) { paid.add(`${hk}|${ek}`); credit(b.p, 1, "lockIncome"); }
+          if (btype(state, b.type).lock && !paid.has(`${hk}|${ek}`)) { paid.add(`${hk}|${ek}`); credit(b.p, 1, "lockIncome"); }
         }
       }
     }

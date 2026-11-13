@@ -213,6 +213,9 @@ svg.icon.crest.big { width: 4.5rem; height: 4.5rem; }
 svg.board:hover .hex-label { opacity: .5; }
 @media (hover: none) { .hex-label { opacity: .4; } }
 .site, .material, .harbour-sprite, .key-token, .bonus-token, .cube-count, .building { pointer-events: none; }
+.harbour-choice { cursor: pointer; }
+.harbour-ring { fill: rgba(246, 231, 184, 0.25); stroke: #c2410c; stroke-width: 3; stroke-dasharray: 6 4; }
+.harbour-choice:hover .harbour-ring { fill: rgba(246, 231, 184, 0.55); }
 .building { pointer-events: auto; }
 .building .shadow { fill: rgb(58 42 28 / .28); }
 .bonus { font-size: 7px; font-weight: 800; text-anchor: middle; fill: #5b2f7a; font-family: "Nunito", system-ui, sans-serif; }
