@@ -799,7 +799,7 @@ function renderGame(newTurn = false) {
           ". Foraging ends the turn and earns no pearl progress.")
         : null;
       controls = h("div", { class: "controls" },
-        p.hand.length ? [h("p", {}, "Choose a card to play."), forage] : [h("p", {}, "Your hand is empty."), h("button", { onclick: () => act({ type: "pass" }) }, "Pass")]);
+        p.hand.length ? (t.secondWind ? h("p", {}, h("b", {}, "Second wind: "), "choose a second card to play.") : [h("p", {}, "Choose a card to play."), forage]) : [h("p", {}, "Your hand is empty."), h("button", { onclick: () => act({ type: "pass" }) }, "Pass")]);
     } else {
       const d = E.def(state, sel.play), n = sel.discards.size;
       const legal = legalDiscardCount(d, n);
@@ -814,7 +814,15 @@ function renderGame(newTurn = false) {
             sel = { play: null, discards: new Set() };
             act({ type: "play", play, discards });
           } }, n ? `Play and discard ${n}` : "Play"),
-          state.config.forageOne > 0 && !n ? h("button", { title: "Discard this card face down for money instead of playing it. The turn ends, with no pearl progress.", onclick: () => {
+          ...E.boardBoosts(state, state.current, d).map((b) => {
+            const ok = E.boardBoostLegal(state, b, [...sel.discards]);
+            return h("button", { disabled: !ok || null, title: `Board boost (${E.techName(state, b)}): ${E.BOARD_BOOSTS[b].text}, instead of the card's own boost`, onclick: () => {
+              const play = sel.play, discards = [...sel.discards];
+              sel = { play: null, discards: new Set() };
+              act({ type: "play", play, discards, board: b });
+            } }, `${E.techName(state, b)}: ${E.BOARD_BOOSTS[b].text}`);
+          }),
+          state.config.forageOne > 0 && !n && !t.secondWind ? h("button", { title: "Discard this card face down for money instead of playing it. The turn ends, with no pearl progress.", onclick: () => {
             const uid = sel.play;
             sel = { play: null, discards: new Set() };
             act({ type: "forage", uid });
@@ -978,14 +986,17 @@ function pearlMenu(p) {
   const btn = (label, ok, title, onclick) => h("button", { class: "ghost", disabled: !ok || null, title, onclick }, label);
   return h("div", { class: "row wrap pearls" },
     h("span", { class: "muted" }, icon("i-pearl"), ` Pearls ${n}: `),
-    btn(`1 → +${cfg.pearlMoney} money`, n >= 1, "Cash in a pearl", () => act({ type: "pearl", kind: "money" })),
+    btn(`1 → +${E.hasTech(state, state.current, "lustre") ? Math.max(3, cfg.pearlMoney + 1) : cfg.pearlMoney} money`, n >= 1, "Cash in a pearl", () => act({ type: "pearl", kind: "money" })),
     btn(redrawing ? "click a hand card…" : "1 → redraw a card", n >= 1 && p.hand.length > 0, "Put a hand card on your discard pile and draw one",
       () => { redrawing = !redrawing; renderGame(); }),
     btn(`${cfg.pearlActionCost} → +1 ${role && ["dig", "build", "buy"].includes(role) ? role : "action"}`, actionOk,
       "One more action of the played card's kind, at full cost", () => act({ type: "pearl", kind: "action" })),
+    E.hasTech(state, state.current, "secondwind") ? btn("3 → play a second card", n >= 3 && p.hand.length > 0 && !state.turn.secondWindUsed,
+      "Second wind: play another card from your hand this turn; its actions add to what you have left", () => act({ type: "pearl", kind: "secondwind" })) : null,
+    E.hasTech(state, state.current, "reserve") ? h("span", { class: "muted" }, " · Reserve: see the market") : null,
     h("span", { class: "muted" }, cfg.pearlEarning === "track"
-      ? ` · pearl track ${p.pearlTrack || 0}/${E.pearlNeed(state, p)}: each card left in your hand at the end of the turn moves it a space${n >= cfg.pearlCap ? " (at the cap, it waits full)" : ""}`
-      : n < cfg.pearlCap ? " · end this turn without having discarded to bank one" : " · at the cap"));
+      ? ` · pearl track ${p.pearlTrack || 0}/${E.pearlNeed(state, p)}: each card left in your hand at the end of the turn moves it a space${n >= E.pearlCapOf(state, p) ? " (at the cap, it waits full)" : ""}`
+      : n < E.pearlCapOf(state, p) ? " · end this turn without having discarded to bank one" : " · at the cap"));
 }
 
 function buildingPicker(p) {

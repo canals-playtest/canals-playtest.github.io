@@ -22,14 +22,15 @@ export function validCommand(cmd) {
   const int = (v) => Number.isInteger(v) && v >= 0 && v < 100000;
   const card = int;   // cards in play are numbered
   switch (cmd.type) {
-    case "play": return card(cmd.play) && Array.isArray(cmd.discards) && cmd.discards.length < 12 && cmd.discards.every(card);
+    case "play": return card(cmd.play) && Array.isArray(cmd.discards) && cmd.discards.length < 12 && cmd.discards.every(card)
+      && (cmd.board === undefined || cmd.board === null || str(cmd.board));
     case "dig": return str(cmd.edge);
     case "build": return str(cmd.hex) && (cmd.kind === undefined || str(cmd.kind)) && (cmd.slot === undefined || str(cmd.slot));
     case "buy": return int(cmd.slot) && (cmd.top === undefined || typeof cmd.top === "boolean");
     case "forage": return cmd.uid === "hand" || card(cmd.uid);
     case "trash": return card(cmd.uid) && (cmd.from === "hand" || cmd.from === "discard");
-    case "pearl": return ["money", "redraw", "action", "reserve"].includes(cmd.kind)
-      && (cmd.kind === "reserve" ? int(cmd.uid) : cmd.uid === undefined || card(cmd.uid));
+    case "pearl": return ["money", "redraw", "action", "reserve", "secondwind"].includes(cmd.kind)
+      && (cmd.kind === "reserve" ? int(cmd.uid) : cmd.uid === undefined || cmd.uid === null || card(cmd.uid));
     case "end": case "pass": return true;
     case "harbour": return str(cmd.hex);
     default: return false;
@@ -47,7 +48,7 @@ export function applyCommand(state, cmd) {
   if (state.over) return fail("the game is over");
   let res, reveals = false, ended = false;
   switch (cmd.type) {
-    case "play": res = E.playCard(state, cmd.play, cmd.discards); break;
+    case "play": res = E.playCard(state, cmd.play, cmd.discards, cmd.board || null); break;
     case "dig": res = E.dig(state, cmd.edge); break;
     case "harbour": res = E.chooseHarbour(state, cmd.hex); ended = res.ok; break;
     case "build": res = E.build(state, cmd.hex, cmd.kind, cmd.slot); break;

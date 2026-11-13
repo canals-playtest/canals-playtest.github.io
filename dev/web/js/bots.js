@@ -211,6 +211,14 @@ export function legalMoves(s) {
     moves.push({ uid, opt: "forage" });
   }
   if (hand.length > 1 && E.canForage(s, "hand").ok) moves.push({ uid: "hand", opt: "forage" });
+  // Board boosts (technologies): instead of the card's own boost, when the hand can pay.
+  for (const uid of hand) {
+    const d = E.def(s, uid), others = hand.filter((u) => u !== uid);
+    for (const b of E.boardBoosts(s, s.current, d)) {
+      const x = E.BOARD_BOOSTS[b];
+      if (others.some((u) => !x.need || E.def(s, u).role === x.need)) moves.push({ uid, opt: `board:${b}` });
+    }
+  }
   return moves;
 }
 
@@ -218,7 +226,8 @@ export function legalMoves(s) {
  * A token's worth on the technology board: its slot's printed income, less a
  * leap's pearl, plus a little for the slots it opens (new types to build).
  */
-const TECH_WORTH = { sluice: 1.5, scaffolding: 3, barge: 2, reserve: 0.5, diving: 1.5 };
+const TECH_WORTH = { sluice: 1.5, scaffolding: 3, barge: 2, reserve: 0.5, diving: 1.5,
+  relay: 3, tunnelling: 1.5, yard: 3, storey: 2, tollhouse: 2, stoneboats: 1, barter: 1.5, guild: 2, larder: 1.5, survey: 5, lustre: 1.5, secondwind: 1.5 };
 
 export function techValue(st, pi, typeId, left) {
   const slot = E.pickSlot(st, pi, typeId);
@@ -343,7 +352,8 @@ export class SearchBot {
     const geo = geometry(b);
     let best = null, bestV = -1e9;
     for (const [hk, h] of Object.entries(b.hexes)) {
-      if (h.slots <= 0 || (st.buildings[hk] || []).length >= h.slots || geo.water(hk)) continue;
+      if (h.slots <= 0 || geo.water(hk)) continue;
+      if ((st.buildings[hk] || []).length >= h.slots && !E.hasTech(st, pi, "storey")) continue;
       let baseV = 2 + (E.techOn(st) ? 0 : INCOME_VP * cfg.incomePerBuilding);
       if (h.isKey) baseV += 3 * (0.5 + sl.special);
       for (const bt of st.buildingTypes) {
@@ -425,16 +435,43 @@ export class SearchBot {
   }
 
   /** Play a move, then take its actions by this bot's targets: digs, builds, buys, trashes. */
+  /** Discards for a board boost: the least wanted cards that pay it (Larder: every card worth little). */
+  boardDiscards(st, uid, b) {
+    const x = E.BOARD_BOOSTS[b], hand = E.currentPlayer(st).hand.filter((u) => u !== uid);
+    const fit = hand.filter((u) => !x.need || E.def(st, u).role === x.need)
+      .map((u) => [u, this.cardValue(st, u)]).sort((a, c) => a[1] - c[1]);
+    if (!x.n) { const low = fit.filter(([, v]) => v < 1.2).map(([u]) => u); return low.length ? low : fit.slice(0, 1).map(([u]) => u); }
+    return fit.slice(0, x.n).map(([u]) => u);
+  }
+
   resolve(st, move) {
     if (move.opt === "forage") return E.forage(st, move.uid);
+    if (typeof move.opt === "string" && move.opt.startsWith("board:")) {
+      const b = move.opt.slice(6);
+      if (!E.playCard(st, move.uid, this.boardDiscards(st, move.uid, b), b).ok) E.playCard(st, move.uid, []);
+      return this.actions(st, true);
+    }
     const discards = move.opt === 0 ? [] : this.pickDiscards(st, move.uid, move.opt);
     if (!E.playCard(st, move.uid, discards).ok) { E.playCard(st, move.uid, []); }
+    return this.actions(st, true);
+  }
+
+  /** Take the played card's actions; then, with Second wind and pearls to spare, a second card. */
+  actions(st, first) {
     this.spendPearls(st);
     const pool = st.turn.pool;
     for (let guard = 0; guard < 30 && pool.dig > 0; guard++) { const ek = this.pickDig(st); if (!ek || !E.dig(st, ek).ok) break; }
     for (let guard = 0; guard < 30 && pool.build > 0; guard++) { const x = this.pickBuild(st); if (!x || !E.build(st, ...x).ok) break; }
     for (let guard = 0; guard < 30 && pool.buy > 0; guard++) { const x = this.pickBuy(st); if (x === null || !E.buy(st, ...x).ok) break; }
     for (let guard = 0; guard < 10; guard++) { const x = this.pickTrash(st); if (!x || !E.trash(st, ...x).ok) break; }
+    const p = E.currentPlayer(st);
+    if (first && p.hand.length && (p.pearls || 0) >= 4 && E.hasTech(st, st.current, "secondwind") && E.spendPearl(st, "secondwind").ok) {
+      const moves = legalMoves(st).filter((m) => m.opt !== "forage");
+      const m = moves.map((x) => [x, this.prior(st, x)]).sort((a, c) => c[1] - a[1])[0]?.[0];
+      const discards = !m || m.opt === 0 || typeof m.opt === "string" ? [] : this.pickDiscards(st, m.uid, m.opt);
+      if (!E.playCard(st, m.uid, discards).ok) E.playCard(st, m.uid, []);
+      return this.actions(st, false);
+    }
     return E.endTurn(st);
   }
 

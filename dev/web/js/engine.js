@@ -569,6 +569,7 @@ export function pearlCapOf(state, p) {
   return state.config.pearlCap + (hasTech(state, state.players.indexOf(p), "diving") ? 2 : 0);
 }
 export const techSlot = (state, id) => state.tech?.slots.find((x) => x.id === id);
+export const techName = (state, tech) => state.tech?.slots.find((x) => x.tech === tech)?.name || tech;
 
 /** Can this slot be reached without a leap: next to the centre or an emptied slot? */
 export function slotReachable(state, pi, id) {
@@ -723,15 +724,44 @@ function applyEffects(state, p, fx) {
 const fail = (reason) => ({ ok: false, reason });
 const OK = { ok: true };
 
-/** Play a card from hand, discarding `discardUids` to boost it. */
-export function playCard(state, uid, discardUids = []) {
+/**
+ * Board boosts (technologies, brainstorm-stage-3.md 5.4): printed boosts for a
+ * colour, used instead of the card's own boost, never both. need: the
+ * discards' colour (null: any) and how many (0: one or more).
+ */
+export const BOARD_BOOSTS = {
+  relay: { role: "dig", need: "dig", n: 1, fx: { dig: 1 }, text: "discard a Dig card for one more dig" },
+  yard: { role: "build", need: "build", n: 1, fx: { build: 1 }, text: "discard a Build card for one more build" },
+  barter: { role: "buy", need: "earn", n: 1, fx: { buyDiscount: 2 }, text: "discard an Earn card for 2 off" },
+  larder: { role: "earn", need: null, n: 0, fx: { money: 2 }, perCard: true, text: "2 money per card discarded" },
+};
+
+/** The board boosts player pi may use on this card. */
+export function boardBoosts(state, pi, d) {
+  return Object.keys(BOARD_BOOSTS).filter((k) => BOARD_BOOSTS[k].role === d.role && hasTech(state, pi, k));
+}
+
+/** Do these discards (uids) pay board boost b? */
+export function boardBoostLegal(state, b, uids) { return !!BOARD_BOOSTS[b] && boardBoostOk(state, b, uids.map((u) => def(state, u))); }
+
+function boardBoostOk(state, b, discards) {
+  const x = BOARD_BOOSTS[b];
+  if (x.n ? discards.length !== x.n : !discards.length) return false;
+  return !x.need || discards.every((dd) => dd.role === x.need);
+}
+
+/** Play a card from hand, discarding `discardUids` to boost it (or a board boost: `board`, a technology id). */
+export function playCard(state, uid, discardUids = [], board = null) {
   const t = state.turn, p = currentPlayer(state);
   if (state.over || t.phase !== "choose") return fail("not choosing a card");
   if (!p.hand.includes(uid)) return fail("card not in hand");
   if (discardUids.includes(uid) || new Set(discardUids).size !== discardUids.length) return fail("bad discards");
   if (!discardUids.every((u) => p.hand.includes(u))) return fail("discard not in hand");
   const d = def(state, uid);
-  if (!legalDiscards(d, discardUids.map((u) => def(state, u)))) {
+  if (board) {
+    if (!boardBoosts(state, state.current, d).includes(board)) return fail(`no ${board} board boost for this card`);
+    if (!boardBoostOk(state, board, discardUids.map((u) => def(state, u)))) return fail(`${board}: ${BOARD_BOOSTS[board].text}`);
+  } else if (!legalDiscards(d, discardUids.map((u) => def(state, u)))) {
     return fail(`${d.boostCostText || "no boost"}: those discards don't pay it`);
   }
 
@@ -747,13 +777,22 @@ export function playCard(state, uid, discardUids = []) {
   t.ownOnly = state.harbours?.length && d.deck === "starting" && !hasTech(state, state.current, "sluice") ? state.current : -1;
   t.starter = d.deck === "starting";
   t.discards = discardUids;
+  // Second wind (technology): a second card adds to what is left of the first's pool.
+  const carry = t.secondWind ? t.pool : null;
+  t.secondWind = false;
   t.pool = NEW_POOL();
-  const fx = resolveEffects(d, discardUids.length);
+  if (carry) for (const [k, n] of Object.entries(carry)) t.pool[k] = (t.pool[k] || 0) + n;
+  const fx = board ? { ...resolveEffects(d, 0) } : resolveEffects(d, discardUids.length);
+  if (board) {
+    const x = BOARD_BOOSTS[board];
+    for (const [k, n] of Object.entries(x.fx)) fx[k] = (fx[k] || 0) + n * (x.perCard ? discardUids.length : 1);
+    t.boardBoost = board;
+  } else t.boardBoost = null;
   t.effects = fx;
   p.stats.turns++;
   p.stats.playedByRole[d.role] = (p.stats.playedByRole[d.role] || 0) + 1;
   if (discardUids.length) { p.stats.boosted++; p.stats.discarded += discardUids.length; }
-  log(state, `${p.name} plays ${displayName(d)}${discardUids.length ? ` discarding ${discardUids.length}` : ""}.`);
+  log(state, `${p.name} plays ${displayName(d)}${discardUids.length ? ` discarding ${discardUids.length}` : ""}${board ? ` (board boost: ${techName(state, board)})` : ""}.`);
   applyEffects(state, p, fx);
   return OK;
 }
@@ -881,7 +920,14 @@ export function digCost(state, ek, pi = state.current) {
       if (b.p === pi && d > camp) { const hc = hexCorners(hk); if (hc.includes(c1) || hc.includes(c2)) camp = d; }
     }
   }
-  return Math.max(0, state.board.edges[ek].cost - (state.turn?.pool?.digDiscount || 0) - camp);
+  let cost = state.board.edges[ek].cost;
+  // Tunnelling (technology): hills cost you nothing extra.
+  if (state.tech && hasTech(state, pi, "tunnelling")) {
+    const e = state.board.edges[ek], b = state.board;
+    const dig = (h) => Math.max(0, b.terrain[h.terrain].digCost + (h.feature === "hills" ? 0 : b.features?.[h.feature]?.digMod || 0));
+    cost = Math.max(dig(b.hexes[e.a]), dig(b.hexes[e.b]));
+  }
+  return Math.max(0, cost - (state.turn?.pool?.digDiscount || 0) - camp);
 }
 
 export function canDig(state, ek) {
@@ -891,7 +937,7 @@ export function canDig(state, ek) {
   if (t.phase !== "resolve" || (t.pool.dig || 0) < 1) return fail("no dig available");
   if (state.dug[ek] !== undefined) return fail("already dug");
   if (inlandClosed(state) && isDeep(state, ek)) return fail("inland on both sides: closed until the inland milestone");
-  if (state.config.highlandNeedsBought && t.starter && touchesHighland(state, ek)) return fail("a starting card can't dig in the highland: only bought dig cards reach it");
+  if (state.config.highlandNeedsBought && t.starter && touchesHighland(state, ek) && !hasTech(state, state.current, "tunnelling")) return fail("a starting card can't dig in the highland: only bought dig cards reach it");
   if (state.config.connectionRequired && t.ownOnly >= 0 && state.harbours?.length) {
     if (!extendsOwn(state, ek, t.ownOnly)) return fail("a starting card digs only from your own harbour or your own canals");
   } else if (state.config.connectionRequired && !extendsNetwork(state, ek) && !remoteDigAllowed(state, ek)) {
@@ -1047,7 +1093,7 @@ export function tollRoutes(state, link = linkedNetwork(state), pi = state.curren
   const cache = {};
   const search = (r) => {
     if (cache[r]) return cache[r];
-    const stone = r === "stone";
+    const stone = r === "stone" && !(state.tech && hasTech(state, pi, "stoneboats"));
     const w = (ek) => (state.dug[ek] === pi ? 0 : cfg.tollPerCanal) + (stone ? cfg.stoneBankToll : 0);
     const dist = new Map(), prev = new Map(), from = new Map();
     const open = [];
@@ -1094,7 +1140,11 @@ export function tollRoutes(state, link = linkedNetwork(state), pi = state.curren
 /** Pay for a build's hauls: fees to sources' owners, tolls to canals' owners, the bank; Locks earn from the bank. */
 function payTolls(state, p, picks) {
   const pi = state.players.indexOf(p);
-  const credit = (o, n, what) => { const q = state.players[o]; q.money += n; q.stats.rent = (q.stats.rent || 0) + n; q.stats[what] = (q.stats[what] || 0) + n; };
+  const housed = new Set();   // Toll house (technology): once per build for each owner
+  const credit = (o, n, what) => {
+    const q = state.players[o]; q.money += n; q.stats.rent = (q.stats.rent || 0) + n; q.stats[what] = (q.stats[what] || 0) + n;
+    if (n > 0 && !housed.has(o) && state.tech && hasTech(state, o, "tollhouse")) { housed.add(o); q.money += 1; q.stats.tollhouse = (q.stats.tollhouse || 0) + 1; }
+  };
   for (const x of picks) {
     p.stats.hauled[x.resource] = (p.stats.hauled[x.resource] || 0) + 1;
     if (x.fee && x.owner !== undefined && x.owner !== pi) credit(x.owner, x.fee, "fees");
@@ -1204,7 +1254,11 @@ export function canBuild(state, hk, typeId, haul = undefined, slotId = undefined
   if (typeId !== undefined && !state.buildingTypes.some((b) => b.id === typeId)) return fail(`no building type ${typeId}`);
   if (t.phase !== "resolve" || (t.pool.build || 0) < 1) return fail("no build available");
   if (!state.board.terrain[h.terrain].buildable || h.slots <= 0) return fail("not a building site");
-  if ((state.buildings[hk] || []).length >= h.slots) return fail("no free slot");
+  const here = state.buildings[hk] || [];
+  // Second storey (technology): one more building on a hex where you have one.
+  const storey = state.tech && here.length === h.slots && h.slots > 0 && here.some((b) => b.p === state.current)
+    && here.filter((b) => b.p === state.current).length < 2 && hasTech(state, state.current, "storey");
+  if (here.length >= h.slots && !storey) return fail("no free slot");
   if (inlandClosed(state) && isInland(state, hk)) return fail("inland: closed until the inland milestone");
   if (state.config.buildNeedsNetwork && !networkHexes(state).has(hk)) return fail("must be on the canal network");
   if (bt.site && h.material !== bt.site) return fail(`a ${bt.name} goes only on a ${TERRAIN_WORD[bt.site]}`);
@@ -1253,10 +1307,14 @@ export function build(state, hk, typeId, slotId = undefined) {
   const extras = [`+${inc} income`];
   if (slot) {
     p.taken.push(slot.id);
+    if (techSlot(state, slot.id).tech === "survey" && techLevel(state) >= 2) {
+      p.handSize = Math.min(state.config.handSizeCap || Infinity, p.handSize + 1);
+      extras.push(`Survey: hand size ${p.handSize}`);
+    }
     if (slot.leap) { p.pearls -= state.config.techLeapCost; p.stats.pearlsSpent = (p.stats.pearlsSpent || 0) + state.config.techLeapCost; }
     extras.push(`from slot ${slot.id} (${techSlot(state, slot.id).sector})${slot.leap ? `, a leap for ${state.config.techLeapCost} pearl` : ""}`);
   }
-  if (h.isKey) { p.keys++; extras.push("key tile: +1 key"); }
+  if (h.isKey && (state.buildings[hk] || []).filter((b) => b.p === state.current).length === 1) { p.keys++; extras.push("key tile: +1 key"); }
   const tok = state.tokens?.[hk];
   if (tok && state.tokenClaimed?.[hk] === undefined) {
     (state.tokenClaimed ||= {})[hk] = state.current;
@@ -1314,7 +1372,10 @@ export function buildingVP(state, hk, b) {
 }
 
 export function buyCost(state, uid) {
-  return Math.max(0, def(state, uid).cost - (state.turn?.pool?.buyDiscount || 0));
+  const d = def(state, uid);
+  // Guild (technology): tier-2 cards cost you 2 less.
+  const guild = state.tech && deckTier(d.deck) > 1 && hasTech(state, state.current, "guild") ? 2 : 0;
+  return Math.max(0, d.cost - (state.turn?.pool?.buyDiscount || 0) - guild);
 }
 
 /** What putting a bought card on top of the draw pile adds (rule buyOnTopCost), or null if not allowed. */
@@ -1391,7 +1452,7 @@ export function trash(state, uid, source) {
 export const PEARL_ROLE_POOL = { dig: "dig", build: "build", buy: "buy" };
 
 /** Pearls this menu choice costs. */
-export const pearlCost = (state, kind) => (kind === "action" ? state.config.pearlActionCost : 1);
+export const pearlCost = (state, kind) => (kind === "action" ? state.config.pearlActionCost : kind === "secondwind" ? 3 : 1);
 
 /** Spaces for the next pearl: the base, plus pearls used / divisor, plus a
  * step per pearl held and per card of hand size above the start. As sim/rules.py pearl_need. */
@@ -1433,8 +1494,17 @@ export function spendPearl(state, kind, uid) {
   const cost = pearlCost(state, kind);
   if ((p.pearls || 0) < cost) return fail(`needs ${cost} pearl${cost === 1 ? "" : "s"}`);
   if (kind === "money") {
-    p.money += cfg.pearlMoney;
-    log(state, `${p.name} cashes a pearl for ${cfg.pearlMoney}.`);
+    // Lustre (technology): a pearl is worth 3.
+    const worth = hasTech(state, state.current, "lustre") ? Math.max(3, cfg.pearlMoney + 1) : cfg.pearlMoney;
+    p.money += worth;
+    log(state, `${p.name} cashes a pearl for ${worth}.`);
+  } else if (kind === "secondwind") {
+    if (!hasTech(state, state.current, "secondwind")) return fail("needs the Second wind technology");
+    if (t.secondWindUsed) return fail("one second card a turn");
+    if (!p.hand.length) return fail("no card left to play");
+    t.secondWind = true; t.secondWindUsed = true;
+    t.phase = "choose";
+    log(state, `${p.name} spends ${cost} pearls for a second card (Second wind).`);
   } else if (kind === "action") {
     const role = def(state, t.played).role, pool = PEARL_ROLE_POOL[role];
     if (!pool) return fail("only a dig, build or buy card can take an extra action");
@@ -1469,6 +1539,7 @@ export function spendPearl(state, kind, uid) {
 export function canForage(state, uid) {
   const t = state.turn, p = currentPlayer(state), cfg = state.config;
   if (state.over || t?.phase !== "choose") return fail("not choosing a card");
+  if (t.secondWind) return fail("play your second card");
   if (uid === "hand") return cfg.forageHand > 0 && p.hand.length ? OK : fail("no foraging with the whole hand");
   if (!(cfg.forageOne > 0)) return fail("no foraging");
   return p.hand.includes(uid) ? OK : fail("card not in hand");
