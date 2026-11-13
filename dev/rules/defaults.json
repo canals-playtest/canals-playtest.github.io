@@ -198,8 +198,8 @@
       "note": "Pearls for one more dig, build or buy (the played card's kind), at full cost. Open question 40"
     },
     "techBoard": {
-      "value": "income", "status": "assumed",
-      "note": "The technology board (board/tech.csv), each player's honeycomb of building tokens: every building comes from it, from a slot next to an open one. \"income\": tokens, adjacency, the leap and +1 income under each inner slot only (buildings otherwise give none); \"off\": buildings.csv supply and incomePerBuilding. brainstorm-stage-3.md 5.9 step 1"
+      "value": "level1", "status": "assumed",
+      "note": "The technology board (board/tech.csv), each player's honeycomb of building tokens: every building comes from it, from a slot next to an open one. \"income\": tokens, adjacency, the leap and +1 income under each inner slot only (buildings otherwise give none); \"level1\": the six inner slots' technologies too; \"level2\": the outer ones; \"full\": capstones; \"off\": buildings.csv supply and incomePerBuilding. brainstorm-stage-3.md 5.9"
     },
     "techLeapCost": {
       "value": 1, "status": "assumed",

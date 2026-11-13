@@ -286,8 +286,11 @@ export function renderTechBoard(state, pi, size = 15) {
     if (!gone) sprite(hasSymbol(`b-${x.token}`) ? `b-${x.token}` : "b-plain", cx, cy, size * 1.25, g);
     else if (x.income) el("text", { x: cx, y: cy + size * 0.3, "text-anchor": "middle", "font-size": size * 0.8, class: "tech-income" }, g).textContent = `+${x.income}`;
     const bt = state.buildingTypes.find((b) => b.id === x.token);
+    const plays = E.techLevel(state) >= (x.ring === "inner" ? 1 : 2);
+    if (plays && gone) el("text", { x: cx, y: cy - size * 0.35, "text-anchor": "middle", "font-size": size * 0.42, class: "tech-name" }, g).textContent = x.name;
     el("title", {}, g).textContent = `${x.sector}, ${x.ring === "inner" ? "inner" : "outer"} slot: ${gone ? "built" : `${bt?.name || x.token} token`}`
-      + `${x.income ? `; +${x.income} income when built` : ""}${gone ? "" : near ? "; can be built now" : `; out of reach: a leap costs ${state.config.techLeapCost} pearl`}`;
+      + `${x.income ? `; +${x.income} income when built` : ""}${gone ? "" : near ? "; can be built now" : `; out of reach: a leap costs ${state.config.techLeapCost} pearl`}`
+      + (plays ? `\n${x.name}${gone ? " (yours)" : ""}: ${x.text}` : "");
   }
   const pad = size + 2;
   svg.setAttribute("viewBox", `${Math.min(...xs) - pad} ${Math.min(...ys) - pad} ${Math.max(...xs) - Math.min(...xs) + 2 * pad} ${Math.max(...ys) - Math.min(...ys) + 2 * pad}`);

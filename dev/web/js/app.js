@@ -169,7 +169,7 @@ function setData(d) {
 
 // Bumped when a default changes, so a setup saved in this browser earlier
 // picks up the new value instead of silently keeping the old one.
-const SETUP_VERSION = 9;
+const SETUP_VERSION = 10;
 // The connection rule became settled (2); building types became the working rule (3);
 // the inland milestone replaced the first-opened-hex unlock (4); the game ends by
 // trigger, with rounds a cap, and the pearl track came in (6).
@@ -886,7 +886,12 @@ function renderGame(newTurn = false) {
     row(mk.display, 0),
     split ? h("h3", {}, "Inland market ", h("span", { class: "muted" },
       state.inlandOpen ? `(${tierLeft(mk.inland)})` : `(${mk.inland.length} cards; opens with the inland)`)) : null,
-    split && state.inlandOpen ? row(mk.inlandDisplay, mk.display.length) : null);
+    split && state.inlandOpen ? row(mk.inlandDisplay, mk.display.length) : null,
+    // Reserve (technology): cards set aside for this player alone.
+    (p.reserved || []).length && acting ? [h("h3", {}, "Reserved for you"), row(p.reserved, mk.display.length + mk.inlandDisplay.length)] : null,
+    acting && t.phase === "resolve" && E.hasTech(state, state.current, "reserve") && (p.pearls || 0) >= 1
+      ? h("p", { class: "hint" }, "Reserve (1 pearl): ", [...mk.display, ...mk.inlandDisplay].map((uid, slot) =>
+        h("button", { class: "ghost", onclick: () => act({ type: "pearl", kind: "reserve", uid: slot }) }, displayName(E.def(state, uid))))) : null);
 
   // Players
   const others = state.players.map((pl, i) => {

@@ -551,6 +551,23 @@ export function techBoard(rows) {
 }
 
 export const techOn = (state) => !!state.tech;
+const TECH_LEVEL = { income: 0, level1: 1, level2: 2, full: 3 };
+/** How far the board is played: 0 tokens and income, 1 inner technologies, 2 outer ones too, 3 capstones. */
+export const techLevel = (state) => (state.tech ? TECH_LEVEL[state.config.techBoard] ?? 0 : -1);
+
+/** Has player pi this technology (its slot emptied, at a level that plays it)? */
+export function hasTech(state, pi, tech) {
+  if (!state.tech) return false;
+  const lvl = techLevel(state);
+  const x = state.tech.slots.find((y) => y.tech === tech);
+  if (!x || lvl < (x.ring === "inner" ? 1 : 2)) return false;
+  return (state.players[pi]?.taken || []).includes(x.id);
+}
+
+/** The most pearls this player may hold: pearlCap, 2 more with Diving. */
+export function pearlCapOf(state, p) {
+  return state.config.pearlCap + (hasTech(state, state.players.indexOf(p), "diving") ? 2 : 0);
+}
 export const techSlot = (state, id) => state.tech?.slots.find((x) => x.id === id);
 
 /** Can this slot be reached without a leap: next to the centre or an emptied slot? */
@@ -585,7 +602,8 @@ export function pickSlot(state, pi, typeId, slotId) {
 export function buildIncome(state, typeId, slotId) {
   const bt = btype(state, typeId);
   if (!state.tech) return state.config.incomePerBuilding + bt.income;
-  return (slotId ? techSlot(state, slotId).income : 0) + bt.income;
+  const x = slotId ? techSlot(state, slotId) : null;
+  return (x ? x.income + (x.tech === "granary" && techLevel(state) >= 1 ? 1 : 0) : 0) + bt.income;
 }
 
 /** The siteTokens rule: [{ name, code, copies, bands }]. */
@@ -634,7 +652,8 @@ function restock(state) {
 }
 
 /** The cards for sale: buy slots number the coastal display, then the inland one. */
-export const marketCards = (state) => [...state.market.display, ...state.market.inlandDisplay];
+/** The cards the current player may buy: the displays, then any they reserved (Reserve). */
+export const marketCards = (state) => [...state.market.display, ...state.market.inlandDisplay, ...(state.players[state.current]?.reserved || [])];
 
 /** Both market decks are empty (the inland one too, open or not). */
 export const marketExhausted = (state) => !state.market.stack.length && !state.market.inland.length;
@@ -724,7 +743,8 @@ export function playCard(state, uid, discardUids = []) {
   t.played = uid;
   t.digAnywhere = d.digAnywhere || "";
   // Own harbours: a starting card's digs extend only its player's own canals.
-  t.ownOnly = state.harbours?.length && d.deck === "starting" ? state.current : -1;
+  // Sluice (technology): your starting cards join anyone's canals.
+  t.ownOnly = state.harbours?.length && d.deck === "starting" && !hasTech(state, state.current, "sluice") ? state.current : -1;
   t.starter = d.deck === "starting";
   t.discards = discardUids;
   t.pool = NEW_POOL();
@@ -1108,7 +1128,9 @@ export function buildPrice(state, hk, typeId, pi = state.current, haul = undefin
   const cfg = state.config, bt = btype(state, typeId);
   const base = state.board.terrain[h.terrain].buildCost + bt.extraCost;
   const off = state.turn?.pool?.buildDiscount || 0;
-  if (!cfg.materials || !bt.needs.length) return { total: Math.max(0, base - off), ok: true, picks: [] };
+  // Scaffolding (technology): every site 1 less, never below 1.
+  const site = (n) => (state.tech && n > 1 && hasTech(state, pi, "scaffolding") ? n - 1 : n);
+  if (!cfg.materials || !bt.needs.length) return { total: site(Math.max(0, base - off)), ok: true, picks: [] };
   if (cfg.hauling === "tolls") {
     // A discount comes off the build, never the tolls and fees others are owed.
     const routes = haul?.tolls && haul.pi === pi ? haul : tollRoutes(state, linkedNetwork(state), pi);
@@ -1118,7 +1140,19 @@ export function buildPrice(state, hk, typeId, pi = state.current, haul = undefin
       if (!best) return { total: Infinity, ok: false, picks };
       picks.push(best);
     }
-    return { total: Math.max(0, base - off) + picks.reduce((a, x) => a + x.cost, 0), ok: true, picks };
+    // Barge (technology): one toll fewer on each build, off the largest owed.
+    if (state.tech && hasTech(state, pi, "barge")) {
+      const i = picks.findIndex((x) => x.tolls > 0);
+      if (i >= 0) {
+        const x = picks[i], owed = { ...x.owed };
+        const o = Object.keys(owed).reduce((a, b) => (owed[b] > owed[a] ? b : a));
+        const less = Math.min(cfg.tollPerCanal, owed[o]);
+        owed[o] -= less;
+        if (!owed[o]) delete owed[o];
+        picks[i] = { ...x, owed, tolls: x.tolls - less, cost: x.cost - less, barge: less };
+      }
+    }
+    return { total: site(Math.max(0, base - off)) + picks.reduce((a, x) => a + x.cost, 0), ok: true, picks };
   }
   const { ports, sources } = haul || hauls(state);
   const corners = hexCorners(hk);
@@ -1313,7 +1347,8 @@ export function buy(state, slot, top = false) {
   p.money -= cost; p.stats.spent += cost; p.stats.buys++;
   if (top) { p.draw.push(uid); p.stats.onTop = (p.stats.onTop || 0) + 1; } else p.discard.push(uid);
   if (slot < m.display.length) { m.display.splice(slot, 1); m.bought.coastal = true; }
-  else { m.inlandDisplay.splice(slot - m.display.length, 1); m.bought.inland = true; }
+  else if (slot < m.display.length + m.inlandDisplay.length) { m.inlandDisplay.splice(slot - m.display.length, 1); m.bought.inland = true; }
+  else p.reserved.splice(slot - m.display.length - m.inlandDisplay.length, 1);
   restock(state);
   t.actions.push({ type: "buy", card: d.id, cost, ...(top ? { top: true } : {}) });
   log(state, `${p.name} buys ${displayName(d)} for ${cost}${top ? `, onto their draw pile (+${extra})` : ""}.`);
@@ -1364,6 +1399,7 @@ export function pearlNeed(state, p) {
   const c = state.config;
   let need = c.pearlThreshold + c.pearlStoredStep * (p.pearls || 0) + c.pearlHandStep * Math.max(0, p.handSize - c.handSize);
   if (c.pearlUsedDivisor) need += Math.floor((p.stats?.pearlsSpent || 0) / c.pearlUsedDivisor);
+  if (state.tech && hasTech(state, state.players.indexOf(p), "diving")) need -= 1;
   return Math.max(1, need);
 }
 
@@ -1374,7 +1410,7 @@ function advancePearlTrack(state, p, kept) {
   const need = pearlNeed(state, p);
   p.pearlTrack = (p.pearlTrack || 0) + kept;
   if (p.pearlTrack >= need) {
-    if ((p.pearls || 0) < state.config.pearlCap) {
+    if ((p.pearls || 0) < pearlCapOf(state, p)) {
       p.pearls = (p.pearls || 0) + 1;
       p.pearlTrack = 0;
       log(state, `${p.name} keeps ${kept} card${kept === 1 ? "" : "s"}: the pearl track fills, a pearl (${p.pearls}).`);
@@ -1404,6 +1440,15 @@ export function spendPearl(state, kind, uid) {
     if (!pool) return fail("only a dig, build or buy card can take an extra action");
     t.pool[pool] = (t.pool[pool] || 0) + 1;
     log(state, `${p.name} spends ${cost} pearls for another ${role}.`);
+  } else if (kind === "reserve") {
+    // Reserve (technology): a display card set aside; only you may buy it. uid: its market slot.
+    if (!hasTech(state, state.current, "reserve")) return fail("needs the Reserve technology");
+    const m = state.market, slot = Number(uid);
+    if (!(slot >= 0 && slot < m.display.length + m.inlandDisplay.length)) return fail("not a display card");
+    const card = slot < m.display.length ? m.display.splice(slot, 1)[0] : m.inlandDisplay.splice(slot - m.display.length, 1)[0];
+    (p.reserved ||= []).push(card);
+    restock(state);
+    log(state, `${p.name} spends a pearl to reserve ${displayName(def(state, card))}.`);
   } else if (kind === "redraw") {
     if (!p.hand.includes(uid)) return fail("that card is not in your hand");
     p.hand = p.hand.filter((u) => u !== uid);
@@ -1471,12 +1516,12 @@ export function endTurn(state) {
   if (state.config.pearls) {
     if (t.forage) { /* foraging: no pearl progress */ }
     else if (state.config.pearlEarning === "track") advancePearlTrack(state, p, kept);
-    else if (t.played && !t.discards.length && (p.pearls || 0) < state.config.pearlCap) {
+    else if (t.played && !t.discards.length && (p.pearls || 0) < pearlCapOf(state, p)) {
       p.pearls = (p.pearls || 0) + 1;
       log(state, `${p.name} kept their cards: a pearl (${p.pearls}).`);
     }
     // A card's +nP: after the track, up to the cap.
-    const got = Math.min(t.pool.pearl || 0, Math.max(0, state.config.pearlCap - (p.pearls || 0)));
+    const got = Math.min(t.pool.pearl || 0, Math.max(0, pearlCapOf(state, p) - (p.pearls || 0)));
     if (got > 0) {
       p.pearls = (p.pearls || 0) + got;
       log(state, `${p.name} takes ${got === 1 ? "a pearl" : `${got} pearls`} from ${displayName(def(state, t.played))} (${p.pearls}).`);

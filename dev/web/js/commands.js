@@ -28,7 +28,8 @@ export function validCommand(cmd) {
     case "buy": return int(cmd.slot) && (cmd.top === undefined || typeof cmd.top === "boolean");
     case "forage": return cmd.uid === "hand" || card(cmd.uid);
     case "trash": return card(cmd.uid) && (cmd.from === "hand" || cmd.from === "discard");
-    case "pearl": return ["money", "redraw", "action"].includes(cmd.kind) && (cmd.uid === undefined || card(cmd.uid));
+    case "pearl": return ["money", "redraw", "action", "reserve"].includes(cmd.kind)
+      && (cmd.kind === "reserve" ? int(cmd.uid) : cmd.uid === undefined || card(cmd.uid));
     case "end": case "pass": return true;
     case "harbour": return str(cmd.hex);
     default: return false;
@@ -52,7 +53,7 @@ export function applyCommand(state, cmd) {
     case "build": res = E.build(state, cmd.hex, cmd.kind, cmd.slot); break;
     case "buy": res = E.buy(state, cmd.slot, !!cmd.top); reveals = true; break;
     case "trash": res = E.trash(state, cmd.uid, cmd.from); break;
-    case "pearl": res = E.spendPearl(state, cmd.kind, cmd.uid); reveals = cmd.kind === "redraw"; break;
+    case "pearl": res = E.spendPearl(state, cmd.kind, cmd.uid); reveals = cmd.kind === "redraw" || cmd.kind === "reserve"; break;
     case "end": case "pass": case "forage": {
       const me = E.currentPlayer(state);
       // pass and forage end the turn themselves

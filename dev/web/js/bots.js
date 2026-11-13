@@ -218,11 +218,16 @@ export function legalMoves(s) {
  * A token's worth on the technology board: its slot's printed income, less a
  * leap's pearl, plus a little for the slots it opens (new types to build).
  */
+const TECH_WORTH = { sluice: 1.5, scaffolding: 3, barge: 2, reserve: 0.5, diving: 1.5 };
+
 export function techValue(st, pi, typeId, left) {
   const slot = E.pickSlot(st, pi, typeId);
   if (!slot) return 0;
-  let v = INCOME_VP * E.techSlot(st, slot.id).income;
+  const x = E.techSlot(st, slot.id);
+  let v = INCOME_VP * E.buildIncome(st, typeId, slot.id) - INCOME_VP * E.btype(st, typeId).income;
   if (slot.leap) v -= PEARL_VP * st.config.techLeapCost;
+  // The technology itself, in rough money over the game left (Granary is in the income above).
+  if (E.techLevel(st) >= (x.ring === "inner" ? 1 : 2)) v += (TECH_WORTH[x.tech] || 0) * left;
   const taken = st.players[pi].taken;
   const opens = st.tech.adj[slot.id].filter((n) => n !== "centre" && !taken.includes(n) && !E.slotReachable(st, pi, n));
   return v + 0.4 * opens.length * left;
