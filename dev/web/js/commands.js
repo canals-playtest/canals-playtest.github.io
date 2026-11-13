@@ -24,7 +24,7 @@ export function validCommand(cmd) {
   switch (cmd.type) {
     case "play": return card(cmd.play) && Array.isArray(cmd.discards) && cmd.discards.length < 12 && cmd.discards.every(card);
     case "dig": return str(cmd.edge);
-    case "build": return str(cmd.hex) && (cmd.kind === undefined || str(cmd.kind));
+    case "build": return str(cmd.hex) && (cmd.kind === undefined || str(cmd.kind)) && (cmd.slot === undefined || str(cmd.slot));
     case "buy": return int(cmd.slot) && (cmd.top === undefined || typeof cmd.top === "boolean");
     case "forage": return cmd.uid === "hand" || card(cmd.uid);
     case "trash": return card(cmd.uid) && (cmd.from === "hand" || cmd.from === "discard");
@@ -49,7 +49,7 @@ export function applyCommand(state, cmd) {
     case "play": res = E.playCard(state, cmd.play, cmd.discards); break;
     case "dig": res = E.dig(state, cmd.edge); break;
     case "harbour": res = E.chooseHarbour(state, cmd.hex); ended = res.ok; break;
-    case "build": res = E.build(state, cmd.hex, cmd.kind); break;
+    case "build": res = E.build(state, cmd.hex, cmd.kind, cmd.slot); break;
     case "buy": res = E.buy(state, cmd.slot, !!cmd.top); reveals = true; break;
     case "trash": res = E.trash(state, cmd.uid, cmd.from); break;
     case "pearl": res = E.spendPearl(state, cmd.kind, cmd.uid); reveals = cmd.kind === "redraw"; break;

@@ -214,6 +214,20 @@ export function legalMoves(s) {
   return moves;
 }
 
+/**
+ * A token's worth on the technology board: its slot's printed income, less a
+ * leap's pearl, plus a little for the slots it opens (new types to build).
+ */
+export function techValue(st, pi, typeId, left) {
+  const slot = E.pickSlot(st, pi, typeId);
+  if (!slot) return 0;
+  let v = INCOME_VP * E.techSlot(st, slot.id).income;
+  if (slot.leap) v -= PEARL_VP * st.config.techLeapCost;
+  const taken = st.players[pi].taken;
+  const opens = st.tech.adj[slot.id].filter((n) => n !== "centre" && !taken.includes(n) && !E.slotReachable(st, pi, n));
+  return v + 0.4 * opens.length * left;
+}
+
 export class SearchBot {
   /** name picks the lane prior; style is sliders(...) or plan(...); search = [rollouts, width] overrides the budget. */
   constructor(name, style, seed = 1, search = null) {
@@ -325,7 +339,7 @@ export class SearchBot {
     let best = null, bestV = -1e9;
     for (const [hk, h] of Object.entries(b.hexes)) {
       if (h.slots <= 0 || (st.buildings[hk] || []).length >= h.slots || geo.water(hk)) continue;
-      let baseV = 2 + INCOME_VP * cfg.incomePerBuilding;
+      let baseV = 2 + (E.techOn(st) ? 0 : INCOME_VP * cfg.incomePerBuilding);
       if (h.isKey) baseV += 3 * (0.5 + sl.special);
       for (const bt of st.buildingTypes) {
         if (!E.canBuild(st, hk, bt.id, haul).ok) continue;   // includes the money
@@ -337,6 +351,7 @@ export class SearchBot {
           v += bt.neighbourCap ? Math.min(bonus, bt.neighbourCap) : bonus;
         }
         v += INCOME_VP * bt.income * left;
+        if (E.techOn(st)) v += techValue(st, pi, bt.id, left);
         v += 0.5 * bt.moneyPerCanal * E.canalsAround(st, hk);
         if (cfg.materials && h.material && bt.extracts) v += cfg.hauling === "tolls" ? 1 + 2.5 * left : 1 + 0.3 * bt.yield * left;   // fees from others, cheap builds for you
         if (bt.lock) v += 0.6 * E.canalsAround(st, hk) * left;   // the bank pays for others' hauls through it

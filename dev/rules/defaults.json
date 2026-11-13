@@ -197,6 +197,14 @@
       "value": 2, "status": "assumed",
       "note": "Pearls for one more dig, build or buy (the played card's kind), at full cost. Open question 40"
     },
+    "techBoard": {
+      "value": "income", "status": "assumed",
+      "note": "The technology board (board/tech.csv), each player's honeycomb of building tokens: every building comes from it, from a slot next to an open one. \"income\": tokens, adjacency, the leap and +1 income under each inner slot only (buildings otherwise give none); \"off\": buildings.csv supply and incomePerBuilding. brainstorm-stage-3.md 5.9 step 1"
+    },
+    "techLeapCost": {
+      "value": 1, "status": "assumed",
+      "note": "Pearls to take a token from a slot not next to an open one (the leap). -1: no leaping."
+    },
     "multiplierSteps": {
       "value": "0:1,1:2,4:3,7:4,10:5", "status": "assumed",
       "note": "Each colour's multiplier in steps: \"count:multiplier\" pairs, the highest count reached applies (0 gives x1, 1-3 x2, 4-6 x3, 7-9 x4, 10 or more x5). Blank: the weighted count itself (up to multiplierCap). brainstorm-stage-3.md 6.2"

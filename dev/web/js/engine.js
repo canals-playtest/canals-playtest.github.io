@@ -340,6 +340,8 @@ export function createGame(data, config = {}) {
     buildings: {},    // hexKey -> [{ p: player index, type: building id }]
     // docs/buildings.md: board/buildings.csv when the rule is on.
     buildingTypes: buildingTypes(cfg.buildingTypes ? data.buildings : undefined),
+    // The technology board (brainstorm-stage-3.md 5): board/tech.csv, under rule techBoard.
+    tech: cfg.techBoard && cfg.techBoard !== "off" && data.tech?.length && cfg.buildingTypes ? techBoard(data.tech) : null,
     claimed: {},      // hexKey -> player who took its discovery
     cubes: {},        // hexKey -> resource cubes left on an extractor (docs/resources.md)
     supply: null,     // resource -> cubes left in the import market; set below
@@ -387,6 +389,7 @@ export function createGame(data, config = {}) {
       name, colour: PLAYER_COLOURS[i % PLAYER_COLOURS.length],
       draw: shuffle(state, deck), hand: [], discard: [], play: [],
       money: cfg.startingPurse, income: cfg.startingIncome, keys: 0, handSize: cfg.handSize, pearls: 0, pearlTrack: 0,
+      taken: [],      // technology board slots emptied (their tokens built), in order
       stats: { turns: 0, boosted: 0, discarded: 0, digs: 0, builds: 0, buys: 0, earns: 0, trashed: 0,
         spent: 0, earned: 0, discoveries: 0, rent: 0, hauled: {}, playedByRole: {}, builtByType: {} },
     };
@@ -518,6 +521,71 @@ export function scaledMarket(defs, deckSizes, players) {
     }
   }
   return market;
+}
+
+// --------------------------------------------------------------------------- //
+// The technology board (brainstorm-stage-3.md 5): each player's honeycomb of
+// building tokens. An open centre, six inner slots (one a sector) and twelve
+// outer ones; a building's token comes from a slot next to an open one (the
+// centre, or a slot already emptied), or from anywhere for a pearl (the leap).
+// Every building comes from the board: eighteen tokens, nothing beyond.
+// Geometry: inner i touches the centre, inner i±1, corner i, edges i and i-1;
+// corner i touches inner i and edges i-1 and i; edge i (between sectors i and
+// i+1) touches inners i and i+1 and corners i and i+1.
+// --------------------------------------------------------------------------- //
+
+export function techBoard(rows) {
+  const slots = rows.filter((r) => r.id).map((r) => ({
+    id: r.id, sector: r.sector, ring: r.ring, token: r.token, income: Number(r.income) || 0,
+    tech: r.tech, name: r.name, text: r.text,
+  }));
+  const at = (ring, i) => slots.find((x) => x.ring === ring && Number(x.id.slice(1)) === ((i % 6) + 6) % 6)?.id;
+  const adj = {};
+  for (const x of slots) {
+    const i = Number(x.id.slice(1));
+    adj[x.id] = (x.ring === "inner" ? ["centre", at("inner", i + 1), at("inner", i - 1), at("corner", i), at("edge", i), at("edge", i - 1)]
+      : x.ring === "corner" ? [at("inner", i), at("edge", i - 1), at("edge", i)]
+      : [at("inner", i), at("inner", i + 1), at("corner", i), at("corner", i + 1)]).filter(Boolean);
+  }
+  return { slots, adj, sectors: [...new Set(slots.map((x) => x.sector))] };
+}
+
+export const techOn = (state) => !!state.tech;
+export const techSlot = (state, id) => state.tech?.slots.find((x) => x.id === id);
+
+/** Can this slot be reached without a leap: next to the centre or an emptied slot? */
+export function slotReachable(state, pi, id) {
+  const taken = state.players[pi].taken || [];
+  return state.tech.adj[id].some((n) => n === "centre" || taken.includes(n));
+}
+
+/** Slots holding a token of this type for pi: [{ id, leap }], reachable ones first, inner before outer. */
+export function buildSlots(state, pi, typeId) {
+  if (!state.tech) return [];
+  const taken = state.players[pi].taken || [];
+  const ring = { inner: 0, corner: 1, edge: 1 };
+  return state.tech.slots.filter((x) => x.token === typeId && !taken.includes(x.id))
+    .map((x) => ({ id: x.id, leap: !slotReachable(state, pi, x.id), ring: ring[x.ring] }))
+    .sort((a, b) => a.leap - b.leap || a.ring - b.ring)
+    .map(({ id, leap }) => ({ id, leap }));
+}
+
+/** The slot a build would use: the one asked for if legal, else the first reachable, else a leap if affordable. */
+export function pickSlot(state, pi, typeId, slotId) {
+  const list = buildSlots(state, pi, typeId), p = state.players[pi];
+  const leapOk = (p.pearls || 0) >= state.config.techLeapCost && state.config.techLeapCost >= 0;
+  if (slotId) {
+    const x = list.find((y) => y.id === slotId);
+    return x && (!x.leap || leapOk) ? x : null;
+  }
+  return list.find((x) => !x.leap) || (leapOk ? list[0] : null) || null;
+}
+
+/** Income a building of this type gives: its slot's printed income on the board, else incomePerBuilding; plus the type's own. */
+export function buildIncome(state, typeId, slotId) {
+  const bt = btype(state, typeId);
+  if (!state.tech) return state.config.incomePerBuilding + bt.income;
+  return (slotId ? techSlot(state, slotId).income : 0) + bt.income;
 }
 
 /** The siteTokens rule: [{ name, code, copies, bands }]. */
@@ -1095,7 +1163,7 @@ export function builtCount(state, pi, typeId) {
 }
 
 /** `haul` (from hauls()) prices many sites at once, as buildPrice. */
-export function canBuild(state, hk, typeId, haul = undefined) {
+export function canBuild(state, hk, typeId, haul = undefined, slotId = undefined) {
   const t = state.turn, p = currentPlayer(state), h = state.board.hexes[hk];
   const bt = btype(state, typeId);
   if (!h) return fail("no such hex");
@@ -1107,18 +1175,26 @@ export function canBuild(state, hk, typeId, haul = undefined) {
   if (state.config.buildNeedsNetwork && !networkHexes(state).has(hk)) return fail("must be on the canal network");
   if (bt.site && h.material !== bt.site) return fail(`a ${bt.name} goes only on a ${TERRAIN_WORD[bt.site]}`);
   if (canalsAround(state, hk) < bt.minCanals) return fail(`${bt.name} needs ${bt.minCanals}+ canals around it`);
-  if (bt.supply && builtCount(state, state.current, bt.id) >= bt.supply) return fail(`no ${bt.name} left in your supply`);
+  if (state.tech) {
+    const list = buildSlots(state, state.current, bt.id);
+    if (!list.length) return fail(`no ${bt.name} left on your board`);
+    if (!pickSlot(state, state.current, bt.id, slotId)) {
+      return fail(slotId && !list.some((x) => x.id === slotId) ? `no ${bt.name} in slot ${slotId}`
+        : `no ${bt.name} next to an open slot: a leap costs ${state.config.techLeapCost} pearl`);
+    }
+  } else if (bt.supply && builtCount(state, state.current, bt.id) >= bt.supply) return fail(`no ${bt.name} left in your supply`);
   const price = buildPrice(state, hk, bt.id, state.current, haul);
   if (!price.ok) return fail(`no ${bt.needs.join(" or ")} can reach this site`);
   if (p.money < price.total) return fail("not enough money");
   return OK;
 }
 
-export function build(state, hk, typeId) {
-  const ok = canBuild(state, hk, typeId);
+export function build(state, hk, typeId, slotId = undefined) {
+  const ok = canBuild(state, hk, typeId, undefined, slotId);
   if (!ok.ok) return ok;
   const bt = btype(state, typeId);
   const t = state.turn, p = currentPlayer(state), h = state.board.hexes[hk];
+  const slot = state.tech ? pickSlot(state, state.current, bt.id, slotId) : null;
   const price = buildPrice(state, hk, bt.id);
   const cost = price.total;
   t.pool.build--;
@@ -1138,9 +1214,14 @@ export function build(state, hk, typeId) {
   (state.buildings[hk] ||= []).push({ p: state.current, type: bt.id });
   if (state.config.materials && bt.extracts && h.material) state.cubes[hk] = bt.yield;
   p.stats.builtByType[bt.id] = (p.stats.builtByType[bt.id] || 0) + 1;
-  const inc = state.config.incomePerBuilding + bt.income;
+  const inc = buildIncome(state, bt.id, slot?.id);
   p.income += inc;
   const extras = [`+${inc} income`];
+  if (slot) {
+    p.taken.push(slot.id);
+    if (slot.leap) { p.pearls -= state.config.techLeapCost; p.stats.pearlsSpent = (p.stats.pearlsSpent || 0) + state.config.techLeapCost; }
+    extras.push(`from slot ${slot.id} (${techSlot(state, slot.id).sector})${slot.leap ? `, a leap for ${state.config.techLeapCost} pearl` : ""}`);
+  }
   if (h.isKey) { p.keys++; extras.push("key tile: +1 key"); }
   const tok = state.tokens?.[hk];
   if (tok && state.tokenClaimed?.[hk] === undefined) {

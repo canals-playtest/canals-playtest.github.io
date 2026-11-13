@@ -246,3 +246,54 @@ export function renderBoard(svg, state, handlers) {
     el("title", {}, dot).textContent = owner >= 0 ? `${state.players[owner].name}'s harbour mouth: canals start here` : "harbour mouth: canals start here";
   }
 }
+
+/**
+ * A player's technology board (brainstorm-stage-3.md 5): the open centre, six
+ * inner slots and twelve outer ones, each showing the building token still on
+ * it. An emptied slot shows what it printed (+1 income on the inner ring).
+ * Slots this player can take now are outlined; the rest need a leap.
+ */
+export function renderTechBoard(state, pi, size = 15) {
+  const NS2 = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS2, "svg");
+  const p = state.players[pi], taken = p.taken || [];
+  const R3 = Math.sqrt(3);
+  const pos = (q, r) => [size * R3 * (q + r / 2), size * 1.5 * r];
+  const hexPts = (x, y) => Array.from({ length: 6 }, (_, k) => {
+    const a = (Math.PI / 180) * (60 * k - 30);
+    return `${x + size * 0.96 * Math.cos(a)},${y + size * 0.96 * Math.sin(a)}`;
+  }).join(" ");
+  const place = (id) => {
+    if (id === "centre") return [0, 0];
+    const i = Number(id.slice(1)), d = NEIGHBOURS[i], e = NEIGHBOURS[(i + 1) % 6];
+    return id[0] === "I" ? d : id[0] === "C" ? [2 * d[0], 2 * d[1]] : [d[0] + e[0], d[1] + e[1]];
+  };
+  const SECTOR_FILL = ["#d8e7ef", "#efe2cf", "#dfe9d6", "#f3e3c3", "#ead9e6", "#e2e2f0"];
+  const all = [{ id: "centre" }, ...state.tech.slots];
+  const xs = [], ys = [];
+  for (const x of all) {
+    const [cx, cy] = pos(...place(x.id));
+    xs.push(cx); ys.push(cy);
+    const g = el("g", { class: "tech-slot" }, svg);
+    if (x.id === "centre") {
+      el("polygon", { points: hexPts(cx, cy), fill: "#fbf6ea", stroke: "#8a7350", "stroke-width": 1 }, g);
+      continue;
+    }
+    const sector = state.tech.sectors.indexOf(x.sector), gone = taken.includes(x.id);
+    const near = !gone && E.slotReachable(state, pi, x.id);
+    el("polygon", { points: hexPts(cx, cy), fill: gone ? "#fbf6ea" : SECTOR_FILL[sector % 6],
+      stroke: near ? state.players[pi].colour : "#8a7350", "stroke-width": near ? 2.2 : 0.8, class: gone ? "taken" : "" }, g);
+    if (!gone) sprite(hasSymbol(`b-${x.token}`) ? `b-${x.token}` : "b-plain", cx, cy, size * 1.25, g);
+    else if (x.income) el("text", { x: cx, y: cy + size * 0.3, "text-anchor": "middle", "font-size": size * 0.8, class: "tech-income" }, g).textContent = `+${x.income}`;
+    const bt = state.buildingTypes.find((b) => b.id === x.token);
+    el("title", {}, g).textContent = `${x.sector}, ${x.ring === "inner" ? "inner" : "outer"} slot: ${gone ? "built" : `${bt?.name || x.token} token`}`
+      + `${x.income ? `; +${x.income} income when built` : ""}${gone ? "" : near ? "; can be built now" : `; out of reach: a leap costs ${state.config.techLeapCost} pearl`}`;
+  }
+  const pad = size + 2;
+  svg.setAttribute("viewBox", `${Math.min(...xs) - pad} ${Math.min(...ys) - pad} ${Math.max(...xs) - Math.min(...xs) + 2 * pad} ${Math.max(...ys) - Math.min(...ys) + 2 * pad}`);
+  svg.setAttribute("class", "tech-board");
+  svg.setAttribute("style", `--pc:${p.colour}`);
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", `${p.name}'s technology board: ${state.tech.slots.length - taken.length} tokens left`);
+  return svg;
+}

@@ -343,3 +343,7 @@ input.code-input { width: 7.5rem; text-transform: uppercase; letter-spacing: .1e
 .stat-line small.track { font-size: .72em; color: var(--muted); font-weight: 600; }
 .buy-top { display: block; margin: 4px 0 8px; font-size: .92em; }
 table.steps { border-collapse: collapse; margin: 6px 0; } table.steps th, table.steps td { border: 1px solid var(--line, #c9b99a); padding: 2px 8px; text-align: center; }
+details.tech { margin-top: 4px; font-size: .9em; }
+details.tech summary { cursor: pointer; color: var(--muted, #7a6a55); }
+.tech-board { width: 150px; height: auto; display: block; margin: 4px auto 0; }
+.tech-income { fill: #7a5f2a; font-weight: 700; }

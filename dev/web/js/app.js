@@ -3,7 +3,7 @@
 import { parseCSV } from "./csv.js";
 import * as E from "./engine.js";
 import { cardDef, ROLES, displayName, legalDiscardCount, resolveEffects } from "./notation.js";
-import { renderBoard } from "./board.js";
+import { renderBoard, renderTechBoard } from "./board.js";
 import { AGENTS, makeRng, setLanePrior, LANE_ROLES } from "./agents.js";
 import { installSprites, icon, crest, ROLE_ICON, hasSymbol } from "./sprites.js";
 import { showRules } from "./rules.js";
@@ -23,6 +23,7 @@ const SOURCES = {
   hexes: [repo("board/hexes.csv")],
   terrain: [repo("board/terrain.csv")],
   buildings: [repo("board/buildings.csv")],
+  tech: [repo("board/tech.csv")],
   // Alternatives (docs/alternatives.md), loaded but only used when chosen in setup.
   altHexes: [repo("board/alternatives/hexes-12x11-hubs.csv")],
   classicHexes: [repo("board/alternatives/hexes-classic-9x6.csv")],
@@ -552,7 +553,7 @@ function gameData(chosen = setup) {
     hexes: chosen.map === "stage1" && data.stage1Hexes?.length ? data.stage1Hexes
       : chosen.map === "alt-12x11" && data.altHexes?.length ? data.altHexes
       : chosen.map === "classic" && data.classicHexes?.length ? data.classicHexes : data.hexes,
-    buildings: data.buildings,
+    buildings: data.buildings, tech: data.tech,
   };
 }
 
@@ -903,7 +904,10 @@ function renderGame(newTurn = false) {
           const steps = E.multiplierSteps(state.config)
             ? ` (${sc.counts[l.mult]} counted${next ? `; ×${next.m} at ${next.at}` : ", the top step"})` : "";
           return h("span", { title: `${ROLES[l.mult].label} multiplier × ${l.score}${steps}` }, icon(ROLE_ICON[l.mult]), `${l.m}×${l.s}`);
-        }), h("b", {}, ` = ${sc.total}`)));
+        }), h("b", {}, ` = ${sc.total}`)),
+      E.techOn(state) ? h("details", { class: "tech", open: i === state.current || null },
+        h("summary", {}, `Board: ${state.tech.slots.length - (pl.taken || []).length} buildings left`),
+        renderTechBoard(state, i)) : null);
   });
 
   // What the others did since this player's last turn: with computers moving
