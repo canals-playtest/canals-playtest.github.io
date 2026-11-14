@@ -8,7 +8,7 @@ import { AGENTS, makeRng, setLanePrior, LANE_ROLES } from "./agents.js";
 import { installSprites, icon, crest, ROLE_ICON, hasSymbol } from "./sprites.js";
 import { showRules } from "./rules.js";
 import { applyCommand } from "./commands.js";
-import { W, ROLE_WORD, CURRENTS, rename, baseWords, boostCostWords, boostWords, WHERE_WORDS, animalGlyph, harbourName, placeName, themeLog } from "./words.js";
+import { W, ROLE_WORD, CURRENTS, rename, codeWords, baseWords, boostCostWords, boostWords, WHERE_WORDS, animalGlyph, harbourName, placeName, themeLog } from "./words.js";
 import { hostTable, joinTable, makeCode, cleanCode, shareLink } from "./net.js";
 import { submitReport, flushReports, sharing, setSharing, reportingAvailable, siteVersion, siteInfo, reportStatus } from "./reports.js";
 
@@ -1397,7 +1397,7 @@ function prizeView() {
   return h("div", { class: "prizes" }, h("h3", {}, "Prizes of the coast ", h("span", { class: "muted" }, open ? "— won only before the meadows open" : "— closed")),
     h("div", { class: "row wrap" }, list.map((x) => {
       const who = state.prizes?.[x.id];
-      return h("span", { class: "pill" + (who !== undefined ? " won" : ""), title: x.code },
+      return h("span", { class: "pill" + (who !== undefined ? " won" : ""), title: `Prize: ${codeWords(x.code)}` },
         x.name, who !== undefined ? ` · ${state.players[who].name}` : open ? " · open" : "");
     })));
 }

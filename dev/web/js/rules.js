@@ -3,7 +3,7 @@
 // text cannot drift from the table it describes.
 import { icon, ROLE_ICON, hasSymbol } from "./sprites.js";
 import * as E from "./engine.js";
-import { rename } from "./words.js";
+import { rename, codeWords } from "./words.js";
 
 function h(tag, attrs = {}, ...kids) {
   const n = document.createElement(tag);
@@ -311,11 +311,11 @@ export function rulesView(game, extra = {}) {
         h("b", {}, "The second"), " comes with the inland milestone: the meadows open, and the first coast cards still in the deck leave the game, so the coast deck is seasoned from then",
         c.tidesLiftStarters ? "; starting dig cards may join anyone's canals. " : ". ",
         h("b", {}, "The third"), " comes when the first highland village is on the network, or when the coast deck runs out: starting dig cards may dig in the highland, and the first meadow cards still in the deck leave the game. ",
-        c.tideReward ? `The player who links that village takes ${c.tideReward}. ` : "",
+        c.tideReward ? `The player who links that village takes ${codeWords(c.tideReward)}. ` : "",
         "Cards already on display stay.") : null,
       prizes.length ? h("div", { class: "box" }, h("b", {}, "Prizes of the coast. "),
         "Before the second tide, the first player to reach each of these takes its prize: ",
-        prizes.map((x, i) => [h("i", {}, x.name), ` (${x.code})`, i < prizes.length - 1 ? "; " : ". "]),
+        prizes.map((x, i) => [h("i", {}, x.name), ` (${codeWords(x.code)})`, i < prizes.length - 1 ? "; " : ". "]),
         "After the second tide, the ones left are gone.") : null,
       h("p", {}, split
         ? [`There are two market decks, each with its own display of ${c.displaySize} cards: coastal from the start, inland once the inland opens. `,

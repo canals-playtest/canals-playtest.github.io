@@ -93,6 +93,11 @@ export function boostWords(d) {
   return fx.map((e) => phrase(e, false)).join(", ");
 }
 
+/** A bare effect code in words: "+1P" -> "+1 pearl". */
+export function codeWords(code) {
+  return parseEffects(code).map((e) => phrase(e, false)).join(", ") || code;
+}
+
 export const WHERE_WORDS = {
   coastal: "Digs anywhere on the coast, even away from the water",
   inland: "Digs anywhere inland, even away from the water",
