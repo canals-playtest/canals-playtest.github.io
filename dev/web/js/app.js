@@ -8,6 +8,7 @@ import { AGENTS, makeRng, setLanePrior, LANE_ROLES } from "./agents.js";
 import { installSprites, icon, crest, ROLE_ICON, hasSymbol } from "./sprites.js";
 import { showRules } from "./rules.js";
 import { applyCommand } from "./commands.js";
+import { W, ROLE_WORD, CURRENTS, rename, baseWords, boostCostWords, boostWords, WHERE_WORDS, animalGlyph, harbourName, placeName, themeLog } from "./words.js";
 import { hostTable, joinTable, makeCode, cleanCode, shareLink } from "./net.js";
 import { submitReport, flushReports, sharing, setSharing, reportingAvailable, siteVersion, siteInfo, reportStatus } from "./reports.js";
 
@@ -249,23 +250,36 @@ function chips(text) {
   });
 }
 
+/** Show the notation codes on cards (a preference kept in this browser). */
+let showCodes = !!store.get("canals.codes");
+
 function cardView(d, opts = {}) {
   const r = ROLES[d.role];
+  const glyph = animalGlyph(d.name);
+  const boostCost = boostCostWords(d);
+  const tip = [d.flavour, showCodes ? null : `${d.baseText}${d.boostCostText ? ` · ${d.boostCostText}: ${d.boostText}` : ""}`].filter(Boolean).join("\n");
   return h("div", {
-    class: `card c-${r.colour}${opts.cls ? " " + opts.cls : ""}`,
-    title: d.flavour || null, onclick: opts.onclick || null,
+    class: `card c-${r.colour}${opts.cls ? " " + opts.cls : ""}`, "data-key": opts.key || null,
+    title: tip || null, onclick: opts.onclick || null,
   },
     h("div", { class: "card-band" }, icon(ROLE_ICON[d.role] || "i-special"), h("span", { class: "card-name" }, displayName(d)),
       d.cost ? h("span", { class: "card-cost", title: `costs ${d.cost}` }, icon("i-coin"), h("b", {}, d.cost)) : null),
-    h("div", { class: "card-art", "aria-hidden": "true" }, icon(ROLE_ICON[d.role] || "i-special")),
+    h("div", { class: "card-art", "aria-hidden": "true" },
+      glyph ? h("span", { class: "animal" }, glyph) : icon(ROLE_ICON[d.role] || "i-special"),
+      h("span", { class: "card-role" }, ROLE_WORD[d.role])),
     h("div", { class: "card-body" },
-      h("div", { class: "card-base" }, chips(d.baseText)),
+      showCodes ? h("div", { class: "card-base" }, chips(d.baseText)) : h("div", { class: "card-base" }, baseWords(d)),
       d.digAnywhere ? h("div", { class: "card-where", title: "A land animal: may also dig away from the sea-linked network on this ground. Such a canal stays cut off until someone links it to the sea." },
-        { coastal: "▼ anywhere coastal", inland: "▼ anywhere inland", any: "▼ anywhere" }[d.digAnywhere]) : null,
-      d.boostCostText ? h("div", { class: "card-boost" }, chips(d.boostCostText), ": ", chips(d.boostText)) : null),
-    h("div", { class: "card-foot" }, h("span", {}, d.id), d.vp ? h("span", { class: "vp", title: `${d.vp} VP for the deck lane` }, icon("i-vp"), d.vp) : null,
-      opts.badge ? h("span", { class: "badge" }, opts.badge) : null));
+        WHERE_WORDS[d.digAnywhere]) : null,
+      d.boostCostText ? h("div", { class: "card-boost" }, showCodes
+        ? [chips(d.boostCostText), ": ", chips(d.boostText)]
+        : [h("span", { class: "boost-cost" }, boostCost), " → ", boostWords(d)]) : null,
+      d.flavour && !opts.compact ? h("div", { class: "card-flavour" }, d.flavour) : null),
+    h("div", { class: "card-foot" }, h("span", {}, showCodes ? d.id : deckWord(d.deck)), d.vp ? h("span", { class: "vp", title: `${d.vp} VP: the Deck current counts it` }, icon("i-vp"), d.vp) : null),
+    opts.badge ? h("span", { class: "badge" }, opts.badge) : null);
 }
+
+const deckWord = (deck) => ({ starting: "your own", coastal: "coast", "coastal-2": "coast · seasoned", inland: "meadows", "inland-2": "meadows · seasoned" }[deck] || deck);
 
 // --------------------------------------------------------------------------- //
 // Setup screen
@@ -327,8 +341,8 @@ function renderSetup() {
   refreshSeats = () => seatsEl.replaceChildren(playersBlock());
 
   app.replaceChildren(h("div", { class: "setup" },
-    h("header", { class: "top" }, h("div", { class: "row wrap" }, brand("Canals"), versionBadge()),
-      h("div", { class: "row wrap" }, rulesButton(),
+    h("header", { class: "top" }, h("div", { class: "row wrap" }, brand("Canals"), h("span", { class: "muted" }, "· designer settings"), versionBadge()),
+      h("div", { class: "row wrap" }, h("button", { class: "ghost", onclick: renderHome }, "← Front door"), rulesButton(),
         saved ? h("button", { onclick: () => resume(saved) }, `Resume saved game (round ${saved.round})`) : null)),
     errors.length ? h("div", { class: "errors" }, h("b", {}, "Card notation problems:"), h("ul", {}, errors.map((e) => h("li", {}, e)))) : null,
 
@@ -400,6 +414,106 @@ function renderSetup() {
 
     h("div", { class: "start" }, shareSwitch(), h("button", { class: "primary", onclick: startGame }, "Start game"))));
   pushLobby();
+}
+
+// --------------------------------------------------------------------------- //
+// The front door (docs/state-of-play.md 5.2): one screen for a newcomer; the
+// designer's settings sit behind a link.
+// --------------------------------------------------------------------------- //
+
+const STORY = [
+  "The sea animals have always lived along the shore. This year they mean to reach the high springs, and they have hired the land animals to dig them a way inland.",
+  "Dig canals from your harbour, build on the land your water opens, and gather a deck of animals to help. When the waters reach the high springs, or the market runs dry, the most points wins.",
+];
+
+/** Games from the front door use the game's own rules, whatever the designer's page holds. */
+function frontSetup(players, seats) {
+  const cfg = defaultSetup(null);
+  cfg.players = players; cfg.seats = seats;
+  cfg.aiPace = store.get("canals.setup")?.aiPace || "normal";
+  cfg.seed = Math.floor(Math.random() * 1e6);
+  return fixSeats(cfg);
+}
+
+function renderHome() {
+  stopAi();
+  if (net.role === "guest") leaveTable(false);
+  document.title = "Canals";
+  let saved = store.get("canals.game");
+  if (saved && saved.version !== E.STATE_VERSION) { store.del("canals.game"); saved = null; }
+  const finished = finishedGames();
+  const vsComputer = (n) => {
+    setup = frontSetup(["You", ...Array.from({ length: n }, (_, i) => AI_NAMES[i])], ["human", ...Array(n).fill("greedy")]);
+    startGame();
+  };
+  const hotSeat = (n) => {
+    setup = frontSetup(Array.from({ length: n }, (_, i) => `Player ${i + 1}`), Array(n).fill("human"));
+    startGame();
+  };
+  app.replaceChildren(h("div", { class: "home" },
+    h("div", { class: "hero" },
+      h("div", { class: "hero-art", "aria-hidden": "true" }, ["🦦", "🦫", "🦀", "🦡", "🦉"].map((a) => h("span", { class: "animal" }, a))),
+      h("h1", { class: "hero-title" }, "Canals"),
+      h("p", { class: "hero-sub" }, "A game of water, burrows and borrowed hands, for 2 to 5 players"),
+      STORY.map((t) => h("p", { class: "story" }, t)),
+      versionBadge()),
+    h("div", { class: "doors" },
+      saved && !saved.over ? h("section", { class: "door resume" }, h("h2", {}, "Carry on"),
+        h("p", {}, `Your game in round ${saved.round}, with ${saved.players.map((pl) => pl.name).join(", ")}.`),
+        h("button", { class: "primary", onclick: () => { setup = defaultSetup(store.get("canals.setup")); resume(saved); } }, "Resume the game")) : null,
+      h("section", { class: "door" }, h("h2", {}, "Play against the computer"),
+        h("p", { class: "muted" }, "You and computer players at this screen. About 45 minutes."),
+        h("div", { class: "row wrap" }, [1, 2, 3].map((n) => h("button", { class: n === 2 ? "primary" : "", onclick: () => vsComputer(n) }, `${n + 1} players`)))),
+      h("section", { class: "door" }, h("h2", {}, "Play with friends"),
+        h("p", { class: "muted" }, "Pass this device around, or invite friends to join from their own."),
+        h("div", { class: "row wrap" },
+          [2, 3, 4].map((n) => h("button", { onclick: () => hotSeat(n) }, `${n} at this screen`)),
+          h("button", { onclick: () => { setup = defaultSetup(store.get("canals.setup")); renderSetup(); hostQuick(); } }, "Online, with an invite link"))),
+      h("section", { class: "door" }, h("h2", {}, "How to play"),
+        h("p", { class: "muted" }, "One screen to start; the full rules when you want them. Your first game also has a guide."),
+        h("div", { class: "row wrap" }, h("button", { onclick: quickStart }, "Quick start"), rulesButton("Full rules")))),
+    finished.length ? h("p", { class: "hint home-foot" }, `${finished.length} finished game${finished.length > 1 ? "s" : ""} kept in this browser: see `,
+      h("a", { href: "#", onclick: (e) => { e.preventDefault(); setup = defaultSetup(store.get("canals.setup")); renderSetup(); } }, "the designer's page"), ".") : null,
+    h("footer", { class: "home-foot" },
+      h("a", { href: "#", onclick: (e) => { e.preventDefault(); setup = defaultSetup(store.get("canals.setup")); renderSetup(); } }, "Designer settings"),
+      " · rules switches, decks, maps and finished games · Best on a laptop or tablet.")));
+  scrollTo(0, 0);
+}
+const AI_NAMES = ["Hazel", "Bramble", "Rush", "Tansy"];
+
+/** The rules on one screen. */
+function quickStart() {
+  const cfg = setup || E.DEFAULTS;
+  const step = (n, title, text) => h("li", {}, h("b", {}, title), " ", text);
+  const panel = h("div", { class: "export", role: "dialog", "aria-label": "Quick start", onclick: (e) => { if (e.target === panel) panel.remove(); } },
+    h("div", { class: "export-box quick-start" },
+      h("h2", {}, "Canals in one screen"),
+      h("ol", {},
+        step(1, "Each turn, play one card", "from your hand of three. A card does one thing: dig, build, buy a card, or earn money. You may discard other cards to boost it."),
+        step(2, "Dig canals", "from your harbour, along the borders between hexes. Each hex your canals open is open water."),
+        step(3, "Build", "on land beside your own canals. Buildings score, raise your income, and unlock crafts in your lodge."),
+        step(4, "Buy animals", "from the market to make your deck stronger. They arrive in your discard pile and come round later."),
+        step(5, "Keep cards for pearls", "Cards you keep in hand fill your pearl track. Pearls buy money, a redraw or an extra action."),
+        step(6, "Score four currents", "Each is a count of one colour of card times what it multiplies: Dig × buildings, Build × card VP, Buy × open water, Guide × friendships. So a deck that leans pays."),
+        step(7, "The land opens in three tides", "the coast, then the meadows, then the highland. The game ends when the waters reach the high springs or the market runs dry.")),
+      h("div", { class: "row" }, h("button", { class: "primary", onclick: () => panel.remove() }, "Got it"),
+        h("button", { class: "ghost", onclick: () => { panel.remove(); openRules(); } }, "Full rules"))));
+  document.body.append(panel);
+}
+
+/** "This confused me": a note on this turn, kept with the game's report. */
+function markConfusing() {
+  if (!state) return;
+  const area = h("textarea", { rows: 3, placeholder: "What was confusing? (optional)" });
+  const panel = h("div", { class: "export", role: "dialog", "aria-label": "Note a confusion" },
+    h("div", { class: "export-box" }, h("h2", {}, "This confused me"),
+      h("p", { class: "muted" }, `Marks round ${state.round} in the game's report, so the designer can see where.`), area,
+      h("div", { class: "row" }, h("button", { class: "primary", onclick: () => {
+        (state.notes ||= []).push({ round: state.round, turn: state.turnNumber, player: state.current, text: area.value.trim(), at: Date.now() });
+        persist(); panel.remove(); toast("Noted. Thank you!");
+      } }, "Mark it"), h("button", { class: "ghost", onclick: () => panel.remove() }, "Cancel"))));
+  document.body.append(panel);
+  area.focus();
 }
 
 /** Which version of the game this is: a frozen playtest version, or the development preview. */
@@ -505,7 +619,7 @@ function mapPreview() {
   refreshPreview = () => {
     try {
       const s = E.createGame(gameData(), structuredClone(setup));
-      renderBoard(svg, s, {});
+      renderBoard(svg, s, { still: true, coords: true });
       svg.setAttribute("aria-label", "Map preview");
       const hx = Object.values(s.board.hexes);
       const land = hx.filter((x) => !s.board.terrain[x.terrain].water);
@@ -571,8 +685,10 @@ async function startGame() {
   undo = [];
   sel = { play: null, discards: new Set() };
   if (net.role === "host") net.started = true;
+  state.startedAt = Date.now();
   persist();
   renderGame();
+  scrollTo(0, 0);
   pushState();
 }
 
@@ -617,8 +733,15 @@ function applyMove(cmd) {
     return { ok: true };
   }
   const snap = JSON.stringify(state);
+  const mover = state.current, wasTurn = state.turnNumber;
   const res = applyCommand(state, cmd);
   if (!res.ok) return res;
+  // How long each turn took (the reports carry it: docs/state-of-play.md 5.2).
+  if (state.turnNumber !== wasTurn) {
+    const at = Date.now();
+    (state.timing ||= []).push({ round: state.round, player: mover, ms: state.turnStart ? at - state.turnStart : null, ai: !!state.players[mover]?.ai });
+    state.turnStart = at;
+  }
   // Moves that show hidden information (a new market card) can't be undone.
   if (res.ended || res.reveals) undo = []; else undo.push(snap);
   return res;
@@ -668,7 +791,8 @@ function stopAi() { clearTimeout(aiTimer); aiTimer = null; aiFailed = null; }
 /** If a computer is to move, play its turn after the chosen delay. */
 function scheduleAi() {
   if (net.role === "guest" || aiTimer || aiFailed || !state || state.over || !E.currentPlayer(state).ai) return;
-  aiTimer = setTimeout(aiTurn, (PACES[setup?.aiPace] || PACES.normal)[1]);
+  // Leave time for the last turn's playback (animateLastTurn) before the next.
+  aiTimer = setTimeout(aiTurn, (PACES[setup?.aiPace] || PACES.normal)[1] + playbackMs);
 }
 
 function aiTurn() {
@@ -689,6 +813,7 @@ function aiTurn() {
     renderGame();
     return;
   }
+  state.turnStart = Date.now();
   afterTurn();
 }
 
@@ -745,6 +870,7 @@ function renderGame(newTurn = false) {
     onHarbour: (hk) => act({ type: "harbour", hex: hk }),
     buildType, interactive: acting,
   });
+  const zoomCtl = attachZoom(boardSvg);
   if (net.role !== "local") document.title = acting ? "Your turn · Canals" : "Canals";
 
   // Hand
@@ -765,14 +891,14 @@ function renderGame(newTurn = false) {
             h("span", { class: "hint" }, "They get their seat back when they rejoin.")) : null]
         : h("p", { class: "thinking" }, `Waiting for ${p.name}… `),
       me && me !== p ? [h("h3", {}, `${whose(me.name)} hand `, h("span", { class: "muted" }, "(waiting)")),
-        h("div", { class: "hand mini" }, me.hand.map((uid) => cardView(E.def(state, uid), { cls: "dim" })))] : null);
+        h("div", { class: "hand mini" }, me.hand.map((uid) => cardView(E.def(state, uid), { cls: "dim", key: `c${uid}` })))] : null);
   } else if (t.phase === "startTech") {
     // The starting technology: an inner slot opened for free; its token goes back in the box.
     controls = h("div", { class: "controls" },
-      h("p", {}, h("b", {}, "Choose your starting technology. "), "It opens one inner slot of your board: its technology and income are yours from the first turn, and its building token goes back in the box. No two players the same."),
+      h("p", {}, h("b", {}, "Choose your starting craft. "), "It opens one inner slot of your lodge: its craft and income are yours from the first turn, and its building goes back in the box. No two players the same."),
       h("div", { class: "row wrap" }, E.startTechChoices(state).map((id) => {
         const x = E.techSlot(state, id), bt = state.buildingTypes.find((b) => b.id === x.token);
-        return h("button", { title: `${x.text} (gives up a ${bt?.name || x.token} token)`, onclick: () => act({ type: "startTech", slot: id }) }, `${x.name}: ${x.text}`);
+        return h("button", { class: "craft-choice", title: `Gives up a ${rename(bt?.name || x.token)} from your lodge`, onclick: () => act({ type: "startTech", slot: id }) }, h("b", {}, rename(x.name)), h("span", {}, x.text));
       })));
   } else if (t.phase === "harbour") {
     // The harbour draft: last seat chooses first; a deep harbour costs a premium.
@@ -780,13 +906,15 @@ function renderGame(newTurn = false) {
       h("p", {}, h("b", {}, "Choose your harbour."), " Click a ringed harbour on the map. The last seat chooses first; a deep harbour, one that reaches the inland in fewer canals, costs some of your starting money."),
       h("div", { class: "row" }, E.draftChoices(state).map((hk) => {
         const cost = E.harbourPremium(state, hk);
-        return h("button", { onclick: () => act({ type: "harbour", hex: hk }) }, `${hk}${cost ? ` (deep, −${cost} money)` : ""}`);
+        return h("button", { onmouseenter: () => flashHexes([hk]), onmouseleave: () => flashHexes([]), onclick: () => act({ type: "harbour", hex: hk }) },
+          h("b", {}, harbourName(state, hk)), cost ? ` · deep, costs ${cost} money` : " · free");
       })));
   } else if (t.phase === "choose") {
     for (const uid of p.hand) {
       const d = E.def(state, uid);
       const isPlay = sel.play === uid, isDisc = sel.discards.has(uid);
       hand.append(cardView(d, {
+        key: `c${uid}`,
         cls: isPlay ? "selected" : isDisc ? "discarding" : "clickable",
         badge: isPlay ? "PLAY" : isDisc ? "DISCARD" : null,
         onclick: () => {
@@ -840,8 +968,8 @@ function renderGame(newTurn = false) {
     const trashHand = (t.pool.trashHand || 0) + (t.pool.trashAny || 0) > 0;
     for (const uid of p.hand) {
       hand.append(cardView(E.def(state, uid),
-        redrawing ? { cls: "clickable", badge: "redraw?", onclick: () => { redrawing = false; act({ type: "pearl", kind: "redraw", uid }); } }
-        : trashHand ? { cls: "clickable trashable", badge: "trash?", onclick: () => act({ type: "trash", uid, from: "hand" }) } : { cls: "dim" }));
+        redrawing ? { key: `c${uid}`, cls: "clickable", badge: "redraw?", onclick: () => { redrawing = false; act({ type: "pearl", kind: "redraw", uid }); } }
+        : trashHand ? { key: `c${uid}`, cls: "clickable trashable", badge: "trash?", onclick: () => act({ type: "trash", uid, from: "hand" }) } : { key: `c${uid}`, cls: "dim" }));
     }
     const played = t.played ? E.def(state, t.played) : null;
     controls = h("div", { class: "controls" },
@@ -849,15 +977,7 @@ function renderGame(newTurn = false) {
       h("div", { class: "row wrap" }, poolLine(t.pool)),
       pearlMenu(p),
       t.pool.build > 0 && state.buildingTypes.length > 1 ? buildingPicker(p) : null,
-      h("p", { class: "hint" }, t.pool.dig > 0 ? (state.config.connectionRequired
-        ? `Click a dashed border on the map to dig. A canal must start at a harbour mouth (dot) or share a corner with a canal already linked to the sea${
-          t.digAnywhere ? `. This land animal may also dig anywhere${t.digAnywhere === "any" ? "" : ` ${t.digAnywhere}`}, but such a canal stays cut off until someone links it` : ""}. `
-        : "Click a dashed border on the map to dig. ") : "", t.pool.build > 0 ? (state.config.materials && state.config.hauling === "tolls"
-          ? "Click a highlighted hex to build; hover for its price: its build cost, plus for each resource its type needs the cheapest haul over linked canals (tolls to other players' canals, the source's fee, and the bank's for stone). "
-          : state.config.materials
-          ? "Click a highlighted hex to build; hover for its price. A build pays its terrain cost, plus each cube its type needs from the cheapest connected source: 1 per canal edge to haul it, and 1 to the extractor's owner or the import market's price. "
-          : "Click a highlighted hex to build. ") : "",
-        t.pool.buy > 0 ? "Click a market card to buy. " : ""),
+      t.digAnywhere && t.pool.dig > 0 ? h("p", { class: "hint" }, `This land animal may also dig anywhere${t.digAnywhere === "any" ? "" : t.digAnywhere === "coastal" ? " on the coast" : " inland"}, away from the water; such a canal is cut off until someone links it.`) : null,
       h("div", { class: "row" },
         h("button", { class: "ghost", disabled: !(net.role === "guest" ? net.undoable : undo.length), onclick: () => act({ type: "undo" }) }, "Undo"),
         h("button", { class: "primary", onclick: () => act({ type: "end" }) }, "End turn")));
@@ -868,7 +988,7 @@ function renderGame(newTurn = false) {
   const discardPile = !me ? null : h("details", { class: "pile", open: trashDisc || null },
     h("summary", {}, `Discard pile (${me.discard.length})${trashDisc ? " — click a card to trash it" : ""}`),
     h("div", { class: "hand mini" }, me.discard.map((uid) => cardView(E.def(state, uid),
-      trashDisc ? { cls: "clickable trashable", onclick: () => act({ type: "trash", uid, from: "discard" }) } : {}))));
+      trashDisc ? { key: `c${uid}`, cls: "clickable trashable", onclick: () => act({ type: "trash", uid, from: "discard" }) } : { key: `c${uid}` }))));
 
   // Market
   const canBuy = acting && t.phase === "resolve" && t.pool.buy > 0;
@@ -886,7 +1006,7 @@ function renderGame(newTurn = false) {
     const top = buyTop && topExtra !== null;
     const ok = canBuy && E.canBuy(state, slot, top).ok;
     const cost = canBuy ? E.buyCost(state, uid) + (top ? topExtra : 0) : d.cost;
-    return cardView(d, { cls: ok ? "clickable buyable" : canBuy ? "dim" : "",
+    return cardView(d, { key: `c${uid}`, cls: ok ? "clickable buyable" : canBuy ? "dim" : "",
       badge: canBuy ? `pay ${cost}` : (i === 0 && leavesNext(offset === 0 ? "coastal" : "inland") ? "leaves next" : null),
       onclick: ok ? () => { buyTop = false; act({ type: "buy", slot, ...(top ? { top: true } : {}) }); } : null });
   }), cards.length ? null : h("div", { class: "card empty" }, "—"));
@@ -909,66 +1029,70 @@ function renderGame(newTurn = false) {
       ? h("p", { class: "hint" }, "Reserve (1 pearl): ", [...mk.display, ...mk.inlandDisplay].map((uid, slot) =>
         h("button", { class: "ghost", onclick: () => act({ type: "pearl", kind: "reserve", uid: slot }) }, displayName(E.def(state, uid))))) : null);
 
-  // Players
+  // Players: the others compact, with labels on hover.
   const others = state.players.map((pl, i) => {
     const sc = E.score(state, i);
-    return h("div", { class: "player" + (i === state.current ? " active" : ""), style: `--pc:${pl.colour}` },
+    return h("div", { class: "player" + (i === state.current ? " active" : ""), style: `--pc:${pl.colour}`, "data-key": `player-${i}` },
       h("div", { class: "pname" }, crest(pl, i), pl.name,
         pl.takenOver ? h("span", { class: "muted" }, " · computer, until they rejoin")
-          : pl.ai ? h("span", { class: "muted" }, ` · computer (${pl.ai})`) : null,
-        seatBadge(i)),
-      statLine(pl, i, true),
-      h("div", { class: "row wrap" }, Object.entries(sc.counts).filter(([, c]) => c).map(([r, c]) => h("span", { class: `pill c-${ROLES[r].colour}`, title: `${c} ${ROLES[r].label} card${c === 1 ? "" : "s"}` }, icon(ROLE_ICON[r]), ` ${c}`))),
-      h("div", { class: "lanes", title: "each lane is cards × score; the total if the game ended now" },
-        sc.lanes.map((l) => {
-          const next = E.nextStep(state.config, sc.counts[l.mult]);
-          const steps = E.multiplierSteps(state.config)
-            ? ` (${sc.counts[l.mult]} counted${next ? `; ×${next.m} at ${next.at}` : ", the top step"})` : "";
-          return h("span", { title: `${ROLES[l.mult].label} multiplier × ${l.score}${steps}` }, icon(ROLE_ICON[l.mult]), `${l.m}×${l.s}`);
-        }), h("b", {}, ` = ${sc.total}`)),
-      E.techOn(state) ? h("details", { class: "tech", open: i === state.current || null },
-        h("summary", {}, `Board: ${state.tech.slots.length - (pl.taken || []).length} buildings left`,
-          E.capstonesOf(state, i).map((k) => h("span", { class: "pill", title: E.CAPSTONES[k].text }, ` ★ ${E.CAPSTONES[k].name}`))),
-        renderTechBoard(state, i)) : null);
+          : pl.ai ? h("span", { class: "muted" }, " · computer") : null,
+        seatBadge(i), h("span", { class: "ptotal", title: "the score if the game ended now" }, count(sc.total, `score-${i}`), " pts")),
+      lastTurnLine(i),
+      h("div", { class: "player-row" }, scoreWheel(sc, 74, i),
+        h("div", {}, statLine(pl, i, true),
+          E.techOn(state) ? h("details", { class: "tech" },
+            h("summary", {}, `${W.Lodge}: ${state.tech.slots.length - (pl.taken || []).length} buildings to place`,
+              E.capstonesOf(state, i).map((k) => h("span", { class: "pill", title: E.CAPSTONES[k].text }, ` ★ ${rename(E.CAPSTONES[k].name)}`))),
+            renderTechBoard(state, i)) : null)));
   });
 
-  // What the others did since this player's last turn: with computers moving
-  // quickly in between, this is how you see their turns.
+  // What the others did since this player's last turn.
   const since = me && me.seen !== undefined ? state.log.slice(me.seen) : [];
   const recap = since.length && state.players.length > 1
     ? h("details", { class: "recap", open: t.phase === "choose" || null },
       h("summary", {}, me === p ? "Since your last turn" : "Since your turn"),
-      h("div", { class: "log" }, since.slice(-30).map((l) => h("div", {}, l.msg))))
+      h("div", { class: "log" }, since.slice(-30).map((l) => h("div", {}, themeLog(state, l.msg)))))
     : null;
 
-  const logView = h("div", { class: "log" }, state.log.slice(-40).reverse().map((l) => h("div", {}, h("span", { class: "muted" }, `R${l.round} `), l.msg)));
+  const logView = h("div", { class: "log" }, state.log.slice(-60).reverse().map((l) => h("div", {}, h("span", { class: "muted" }, `R${l.round} `), themeLog(state, l.msg))));
+  const tab = store.get("canals.tab") || "players";
+  const tabs = h("section", { class: "tabs" },
+    h("div", { class: "tab-row", role: "tablist" }, [["players", "Players"], ["market", "Market"], ["log", "Log"], ["key", "Map key"]].map(([k, l]) =>
+      h("button", { role: "tab", class: "tab" + (tab === k ? " on" : ""), "aria-selected": tab === k ? "true" : "false",
+        onclick: () => { store.set("canals.tab", k); renderGame(); } }, l,
+        k === "market" && canBuy ? h("span", { class: "dot-new", title: "you can buy" }) : null))),
+    h("div", { class: "tab-body" }, tab === "players" ? others : tab === "log" ? logView : tab === "market" ? markets : boardLegend(state)));
 
+  const mine = me ? myPanel(me, vi) : null;
+
+  const flip = flipFirst();
   app.replaceChildren(h("div", { class: "game" },
     h("header", { class: "top" },
       brand("Canals"),
-      h("div", { class: "turn-info" }, `Round ${state.round}`, h("span", { class: "muted", title: `The game ends when the market decks run out or every key tile is on the network; at most ${state.config.rounds} rounds` },
-          state.config.endOnMarket ? ` · market: ${state.market.stack.length + state.market.inland.length} cards left` : ` of ${state.config.rounds}`), state.tide ? h("span", { class: "muted", title: "Tide 1: the coast. Tide 2 (the inland milestone): the inland; coastal tier-1 cards are gone. Tide 3 (a highland village on the network, or the coastal deck spent): the highland for starting cards; inland tier-1 cards are gone." }, ` · tide ${state.tide} of 3`) : null,
-        state.endTriggered ? h("span", { class: "warn" }, " · final round") : null,
-        " · ", crest(p, state.current), h("b", {}, whoseSeat(state.current)), " turn", p.ai ? h("span", { class: "muted" }, " (computer)") : null),
-      h("div", { class: "row wrap" }, tableBadge(), rulesButton("Rules"),
-        h("button", { class: "ghost", onclick: () => download(`canals-game-r${state.round}.json`, JSON.stringify(state)) }, "Save game"),
-        net.role === "guest" ? null : h("button", { class: "ghost", onclick: async () => { const t = await pickFile(".json"); if (t) resume(JSON.parse(t)); } }, "Load game"),
+      h("div", { class: "turn-info" }, `Round ${state.round}`,
+        state.tide ? h("span", { class: "tide-chip", title: "The coast, then the meadows (the inland), then the highland." }, ` · ${["", "The coast", "The meadows", "The highland"][state.tide]}`) : null,
+        h("span", { class: "muted", title: `The game ends when the market decks run out, or the waters reach the high springs; at most ${state.config.rounds} rounds` },
+          state.config.endOnMarket ? ` · ${state.market.stack.length + state.market.inland.length} cards left to buy` : ` of ${state.config.rounds}`),
+        state.endTriggered ? h("span", { class: "warn" }, " · final round") : null),
+      h("div", { class: "row wrap" }, tableBadge(), rulesButton("Rules"), settingsMenu(),
         net.role === "guest" ? confirmButton("Leave", "Leave the table? Click again", leaveTable)
-          : confirmButton("Quit", net.role === "host" ? "End the game for everyone? Click again" : "Quit? Click again", () => { store.del("canals.game"); renderSetup(); }))),
+          : confirmButton("Quit", net.role === "host" ? "End the game for everyone? Click again" : "Quit? Click again", () => { store.del("canals.game"); renderHome(); }))),
+    promptBar(acting, p),
     h("main", {},
-      h("div", { class: "board-wrap" }, boardSvg,
-        h("details", { class: "map-key", open: legendOpen() || null,
-          ontoggle: (e) => store.set("canals.mapKey", e.target.open) }, h("summary", {}, "Map key"), boardLegend(state))),
+      h("div", { class: "left" },
+        h("div", { class: "board-wrap" }, boardSvg, zoomCtl),
+        tab !== "market" ? h("section", { class: "market-strip" }, markets) : null),
       h("aside", {},
         netBanner(),
         h("section", { class: "me", style: `--pc:${(me || p).colour}` },
-          me ? h("h2", {}, crest(me, vi), me.name, statLine(me, vi, false))
+          me ? h("h2", {}, crest(me, vi), me.name, h("span", { class: "ptotal" }, count(E.score(state, vi).total, `score-${vi}`), " pts"))
             : h("h2", {}, "Watching", h("span", { class: "muted" }, net.role === "guest" ? " (every seat is taken)" : "")),
-          recap, hand, controls, discardPile),
-        h("section", {}, markets),
-        h("section", {}, h("h2", {}, "Players"), others),
-        h("section", {}, h("h2", {}, "Log"), logView)))));
+          mine?.stats, recap, hand, controls, discardPile, mine?.extra),
+        tabs))));
 
+  flipLast(flip);
+  animateLastTurn();
+  tideBanner();
   if (newTurn && acting && net.role === "guest") toast("Your turn");
   if (newTurn && acting && localSeats().length > 1) {
     const cover = h("div", { class: "cover", onclick: () => cover.remove() },
@@ -977,6 +1101,341 @@ function renderGame(newTurn = false) {
     document.body.append(cover);
   }
   scheduleAi();
+}
+
+// --------------------------------------------------------------------------- //
+// Playback (docs/state-of-play.md 5.3): another player's turn is shown in
+// steps: their card face up, then each canal and building arriving in order.
+// --------------------------------------------------------------------------- //
+
+let animatedTurn = -1, playbackMs = 0;
+const STEP_MS = 380;
+function animateLastTurn() {
+  const recs = state.history || [];
+  const rec = recs[recs.length - 1];
+  if (!rec || animatedTurn === state.turnNumber) { playbackMs = 0; return; }
+  const first = animatedTurn < 0;
+  animatedTurn = state.turnNumber;
+  playbackMs = 0;
+  if (first || canMove(rec.player) && !state.players[rec.player].ai || reduceMotion()) return;
+  const acts = rec.actions.filter((a) => a.type === "dig" || a.type === "build" || a.type === "buy");
+  acts.forEach((a, i) => {
+    const delay = `${300 + i * STEP_MS}ms`;
+    const node = a.type === "dig" ? document.querySelector(`.canal.draw[data-edge="${CSS.escape(a.edge)}"]`)
+      : a.type === "build" ? document.querySelector(`.building.drop[data-hex="${CSS.escape(a.hex)}"]`) : null;
+    if (node) { node.style.animationDelay = delay; for (const c of node.querySelectorAll("*")) c.style.animationDelay = delay; }
+  });
+  const pl = state.players[rec.player], d = rec.card ? state.defs[rec.card] : null;
+  if (d) {
+    const wrap = document.querySelector(".board-wrap");
+    const pop = h("div", { class: "played-pop", style: `--pc:${pl.colour}` },
+      h("div", { class: "who" }, crest(pl, rec.player), `${pl.name} plays`), cardView(d, { compact: true }),
+      h("div", { class: "what" }, lastTurnSummary(rec.player)?.text || ""));
+    wrap?.append(pop);
+    setTimeout(() => pop.classList.add("out"), 900 + acts.length * STEP_MS);
+    setTimeout(() => pop.remove(), 1300 + acts.length * STEP_MS);
+  }
+  playbackMs = 600 + acts.length * STEP_MS;
+  sound(acts.some((a) => a.type === "build") ? "build" : acts.length ? "dig" : null);
+}
+
+/**
+ * FLIP (First, Last, Invert, Play): note where each keyed element is before a
+ * redraw, and after it let each travel from there. Cards then slide from the
+ * market to a hand or pile, and new ones fade in. Nothing in the engine changes.
+ */
+function flipFirst() {
+  if (reduceMotion()) return null;
+  const at = new Map();
+  for (const n of app.querySelectorAll("[data-key]")) at.set(n.dataset.key, n.getBoundingClientRect());
+  return at;
+}
+function flipLast(at) {
+  if (!at || !at.size) return;
+  for (const n of app.querySelectorAll("[data-key]")) {
+    const was = at.get(n.dataset.key);
+    if (!was) { if (n.classList.contains("card")) n.classList.add("enter"); continue; }
+    const now = n.getBoundingClientRect();
+    const dx = was.left - now.left, dy = was.top - now.top;
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
+    n.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration: 380, easing: "cubic-bezier(.2,.7,.2,1)" });
+  }
+}
+
+/** Zoom and pan on the map: buttons, Ctrl+wheel, drag when zoomed, pinch on touch. */
+let zoom = { k: 1, cx: 0.5, cy: 0.5 };
+function attachZoom(svg) {
+  const base = svg.getAttribute("viewBox").split(" ").map(Number);
+  const apply = () => {
+    zoom.k = Math.max(1, Math.min(3.5, zoom.k));
+    zoom.cx = Math.max(0, Math.min(1, zoom.cx)); zoom.cy = Math.max(0, Math.min(1, zoom.cy));
+    const [x, y, w, hh] = base, W = w / zoom.k, H = hh / zoom.k;
+    svg.setAttribute("viewBox", `${x + (w - W) * zoom.cx} ${y + (hh - H) * zoom.cy} ${W} ${H}`);
+    svg.classList.toggle("zoomed", zoom.k > 1.01);
+  };
+  apply();
+  const by = (f) => { zoom.k *= f; apply(); };
+  const pts = new Map();
+  let start = null, moved = false;
+  svg.addEventListener("pointerdown", (e) => {
+    pts.set(e.pointerId, [e.clientX, e.clientY]);
+    start = { k: zoom.k, cx: zoom.cx, cy: zoom.cy, x: e.clientX, y: e.clientY, d: pts.size === 2 ? dist() : 0 };
+    moved = false;
+  });
+  const dist = () => { const [a, b] = [...pts.values()]; return Math.hypot(a[0] - b[0], a[1] - b[1]); };
+  svg.addEventListener("pointermove", (e) => {
+    if (!pts.has(e.pointerId) || !start) return;
+    pts.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pts.size === 2 && start.d) { zoom.k = start.k * dist() / start.d; moved = true; apply(); return; }
+    if (zoom.k <= 1.01) return;
+    const dx = e.clientX - start.x, dy = e.clientY - start.y;
+    if (!moved && Math.hypot(dx, dy) < 5) return;
+    moved = true;
+    const rect = svg.getBoundingClientRect(), [, , w, hh] = base;
+    zoom.cx = start.cx - dx / rect.width * (w / zoom.k) / (w - w / zoom.k);
+    zoom.cy = start.cy - dy / rect.height * (hh / zoom.k) / (hh - hh / zoom.k);
+    apply();
+  });
+  const up = (e) => { pts.delete(e.pointerId); if (!pts.size) start = null; };
+  svg.addEventListener("pointerup", up); svg.addEventListener("pointercancel", up);
+  svg.addEventListener("click", (e) => { if (moved) { e.stopPropagation(); e.preventDefault(); moved = false; } }, true);
+  svg.addEventListener("wheel", (e) => {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    const rect = svg.getBoundingClientRect();
+    zoom.cx = (e.clientX - rect.left) / rect.width; zoom.cy = (e.clientY - rect.top) / rect.height;
+    by(e.deltaY < 0 ? 1.15 : 1 / 1.15);
+  }, { passive: false });
+  return h("div", { class: "zoom-ctl" },
+    h("button", { class: "ghost", title: "Zoom in (or Ctrl + scroll; pinch on touch)", onclick: () => by(1.3) }, "+"),
+    h("button", { class: "ghost", title: "Zoom out", onclick: () => by(1 / 1.3) }, "−"),
+    h("button", { class: "ghost", title: "The whole map", onclick: () => { zoom = { k: 1, cx: .5, cy: .5 }; apply(); } }, "⤢"));
+}
+
+/** The tides as events: a banner across the map when one turns. */
+let lastTide = null, lastTideGame = null;
+const TIDE_WORDS = {
+  2: ["The tide reaches the meadows", "The inland wakes: canals may cross it, buildings rise there, and the meadow animals come to market."],
+  3: ["The tide reaches the highland", "The springs are in sight: your own animals may dig the high ground now."],
+};
+function tideBanner() {
+  const game = `${state.config.seed}|${state.players.map((p) => p.name).join(",")}`;
+  const tide = state.tide || 1;
+  if (lastTideGame === game && lastTide !== null && tide > lastTide && TIDE_WORDS[tide]) {
+    const [t, sub] = TIDE_WORDS[tide];
+    const b = h("div", { class: "tide-banner" }, h("b", {}, t), h("span", {}, sub));
+    document.querySelector(".board-wrap")?.append(b);
+    setTimeout(() => b.classList.add("out"), 3200);
+    setTimeout(() => b.remove(), 3800);
+    sound("tide");
+  }
+  lastTide = tide; lastTideGame = game;
+}
+
+/** Small sounds, off unless chosen in Settings: water for a dig, wood for a build, a bell for a tide. */
+let audio = null;
+function sound(kind) {
+  if (!kind || !store.get("canals.sound")) return;
+  try {
+    audio ||= new (window.AudioContext || window.webkitAudioContext)();
+    const t = audio.currentTime, o = audio.createOscillator(), g = audio.createGain();
+    const spec = { dig: ["sine", 320, 180, .18], build: ["triangle", 180, 140, .12], tide: ["sine", 660, 660, .9], buy: ["sine", 520, 700, .12] }[kind];
+    if (!spec) return;
+    o.type = spec[0]; o.frequency.setValueAtTime(spec[1], t); o.frequency.exponentialRampToValueAtTime(spec[2], t + spec[3]);
+    g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.12, t + .02); g.gain.exponentialRampToValueAtTime(.0001, t + spec[3]);
+    o.connect(g).connect(audio.destination); o.start(t); o.stop(t + spec[3] + .05);
+  } catch { /* no audio */ }
+}
+
+// --------------------------------------------------------------------------- //
+// The game screen's parts (docs/state-of-play.md 5.2-5.4)
+// --------------------------------------------------------------------------- //
+
+/** A number that counts up (or down) from the value it showed last time, under the same key. */
+const shown = new Map();
+function count(n, key) {
+  const span = h("span", { class: "count" }, String(n));
+  const was = shown.get(key);
+  shown.set(key, n);
+  if (was === undefined || was === n || reduceMotion()) return span;
+  span.classList.add(n > was ? "up" : "down");
+  const t0 = performance.now(), dur = Math.min(600, 120 + 60 * Math.abs(n - was));
+  const step = (t) => {
+    const f = Math.min(1, (t - t0) / dur);
+    span.textContent = String(Math.round(was + (n - was) * (1 - (1 - f) ** 3)));
+    if (f < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+  return span;
+}
+const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches || store.get("canals.motion") === false;
+
+/** "Dug 2 canals, built a Wharf" for player i's last turn. */
+function lastTurnSummary(i) {
+  const rec = [...(state.history || [])].reverse().find((r) => r.player === i);
+  if (!rec) return null;
+  const n = (t) => rec.actions.filter((a) => a.type === t);
+  const bits = [];
+  if (rec.card) bits.push(`played ${displayName(state.defs[rec.card] || { name: rec.card, role: "special" })}`);
+  if (n("dig").length) bits.push(`dug ${n("dig").length} canal${n("dig").length > 1 ? "s" : ""}`);
+  for (const b of n("build")) bits.push(`built a ${rename(state.buildingTypes.find((x) => x.id === b.building)?.name || "building")}`);
+  for (const b of n("buy")) bits.push(`bought ${state.defs[b.card]?.name || "a card"}`);
+  const f = n("forage")[0];
+  if (f) bits.push(`foraged ${f.money} money`);
+  return { rec, text: bits.join(", ") || "passed" };
+}
+function lastTurnLine(i) {
+  const x = lastTurnSummary(i);
+  if (!x) return null;
+  const hexes = x.rec.actions.flatMap((a) => (a.type === "dig" ? a.edge.split("|") : a.type === "build" ? [a.hex] : []));
+  return h("div", { class: "last-turn", onmouseenter: () => flashHexes(hexes), onmouseleave: () => flashHexes([]) }, "Last turn: ", x.text, ".");
+}
+function flashHexes(keys) {
+  for (const n of document.querySelectorAll(".hex.flash")) n.classList.remove("flash");
+  for (const k of keys) document.querySelector(`.hex[data-hex="${CSS.escape(k)}"]`)?.classList.add("flash");
+}
+
+/** The scoring wheel: four currents, each its multiplier × its score, filling as the game goes. */
+function scoreWheel(sc, size = 120, pi = null) {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", "-50 -50 100 100");
+  svg.setAttribute("class", "wheel");
+  svg.setAttribute("width", size); svg.setAttribute("height", size);
+  const el = (tag, attrs, parent = svg) => { const n = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); parent.append(n); return n; };
+  const COL = { dig: "var(--brown)", build: "var(--green)", buy: "var(--blue)", special: "var(--purple)" };
+  const top = Math.max(30, ...sc.lanes.map((l) => l.total));
+  sc.lanes.forEach((l, k) => {
+    const a0 = (k * 90 - 90 + 3) * Math.PI / 180, a1 = ((k + 1) * 90 - 90 - 3) * Math.PI / 180;
+    const r0 = 14, rMax = 46, r = r0 + (rMax - r0) * Math.min(1, l.total / top);
+    const arc = (rr) => `M ${r0 * Math.cos(a0)} ${r0 * Math.sin(a0)} L ${rr * Math.cos(a0)} ${rr * Math.sin(a0)} A ${rr} ${rr} 0 0 1 ${rr * Math.cos(a1)} ${rr * Math.sin(a1)} L ${r0 * Math.cos(a1)} ${r0 * Math.sin(a1)} A ${r0} ${r0} 0 0 0 ${r0 * Math.cos(a0)} ${r0 * Math.sin(a0)} Z`;
+    el("path", { d: arc(rMax), fill: COL[l.mult], opacity: .16 });
+    el("path", { d: arc(r), fill: COL[l.mult], class: "wheel-fill" });
+    const am = (a0 + a1) / 2, tx = 31 * Math.cos(am), ty = 31 * Math.sin(am);
+    const t = el("text", { x: tx, y: ty + 3.5, "text-anchor": "middle", class: "wheel-num" });
+    t.textContent = l.total;
+    const cur = CURRENTS[l.mult];
+    const tip = el("title", {}, t);
+    tip.textContent = `${cur.name}: ${l.m} × ${l.s} ${cur.what} = ${l.total} (${cur.desc}; ${sc.counts[l.mult]} cards counted)`;
+  });
+  el("circle", { r: 12.5, class: "wheel-hub" });
+  const c = el("text", { y: 4.5, "text-anchor": "middle", class: "wheel-total" });
+  c.textContent = sc.total;
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", `Score ${sc.total}: ` + sc.lanes.map((l) => `${CURRENTS[l.mult].name} ${l.m}×${l.s}`).join(", "));
+  return svg;
+}
+
+/** My stats with labels, the wheel with its currents spelled out, and my lodge. */
+function myPanel(me, vi) {
+  const cfg = state.config, sc = E.score(state, vi);
+  const item = (ic, label, val, title) => h("div", { class: "stat", title: title || null }, icon(ic), h("span", { class: "stat-label" }, label), h("b", {}, val));
+  const stats = h("div", { class: "my-stats" },
+    item("i-coin", "Money", count(me.money, `money-${vi}`)),
+    item("i-income", "Income", me.income, "An Earn card collects your income"),
+    cfg.pearls ? item("i-pearl", "Pearls", h("span", {}, me.pearls || 0, h("small", { class: "track" }, ` · track ${me.pearlTrack || 0}/${E.pearlNeed(state, me)}`)),
+      "Each card you keep in hand at the end of your turn moves your pearl track a step; a full track gives a pearl. Spend pearls in the pearl menu.") : null,
+    item("i-hand", "Hand", me.handSize, "Cards you draw up to at the end of a turn"),
+    item("i-key", "Friendships", me.keys, "One for each spring village you build in (two in the highland)"),
+    item("i-reach", "Open water", E.reach(state, vi), "Hexes your canals have opened"),
+    item("i-deck", "Deck", `${me.draw.length} to draw · ${me.discard.length} discarded`));
+  const lanes = h("div", { class: "currents" }, sc.lanes.map((l) => {
+    const next = E.nextStep(cfg, sc.counts[l.mult]);
+    return h("div", { class: `current c-${ROLES[l.mult].colour}`, title: CURRENTS[l.mult].desc },
+      icon(ROLE_ICON[l.mult]), h("span", {}, CURRENTS[l.mult].name),
+      h("span", { class: "muted" }, ` ×${l.m} · ${l.s} ${CURRENTS[l.mult].what}`),
+      h("b", {}, ` ${l.total}`),
+      next ? h("small", { class: "muted" }, ` (×${next.m} at ${next.at} card${next.at === 1 ? "" : "s"})`) : null);
+  }));
+  const extra = h("details", { class: "my-score", open: store.get("canals.myScore") !== false || null, ontoggle: (e) => store.set("canals.myScore", e.target.open) },
+    h("summary", {}, "Score and lodge"),
+    h("div", { class: "player-row" }, scoreWheel(sc, 132, vi), lanes),
+    E.techOn(state) ? lodgeView(vi) : null,
+    prizeView());
+  return { stats, extra };
+}
+
+/** The lodge, large: the honeycomb and its crafts, with what is yours and what you can reach. */
+function lodgeView(pi) {
+  const p = state.players[pi], taken = new Set(p.taken || []);
+  const level = E.techLevel(state);
+  const rows = state.tech.slots.filter((x) => level >= (x.ring === "inner" ? 1 : 2)).map((x) => {
+    const mine = taken.has(x.id), near = !mine && E.slotReachable(state, pi, x.id);
+    return h("li", { class: mine ? "mine" : near ? "near" : "" },
+      h("b", {}, rename(x.name)), " ", h("span", { class: "muted" }, mine ? "(yours) " : near ? "(can build) " : ""), x.text);
+  });
+  return h("div", { class: "lodge" },
+    h("h3", {}, `${W.Lodge} `, h("span", { class: "muted" }, "— each building you place empties a slot: you gain its income and its craft")),
+    h("div", { class: "lodge-row" }, renderTechBoard(state, pi, 22), h("ul", { class: "crafts" }, rows)),
+    Object.keys(state.capstones || {}).length || E.tideNow(state) >= 3
+      ? h("p", { class: "hint" }, "Masteries: ", Object.entries(E.CAPSTONES).map(([k, c]) => h("span", { class: "pill", title: c.text },
+        rename(c.name), state.capstones?.[k] !== undefined ? ` · ${state.players[state.capstones[k]].name}` : ""))) : null);
+}
+
+/** First-act prizes: who holds which, while they can be won. */
+function prizeView() {
+  const list = E.prizeList ? E.prizeList(state) : [];
+  if (!list.length) return null;
+  const open = E.prizesOpen(state);
+  return h("div", { class: "prizes" }, h("h3", {}, "Prizes of the coast ", h("span", { class: "muted" }, open ? "— won only before the meadows open" : "— closed")),
+    h("div", { class: "row wrap" }, list.map((x) => {
+      const who = state.prizes?.[x.id];
+      return h("span", { class: "pill" + (who !== undefined ? " won" : ""), title: x.code },
+        x.name, who !== undefined ? ` · ${state.players[who].name}` : open ? " · open" : "");
+    })));
+}
+
+/** One line that says what to do now, in the same place every time; a guide for a first game. */
+function promptBar(acting, p) {
+  const t = state.turn;
+  let text, guide = null;
+  if (!acting) text = p.ai ? `${p.name} is playing…` : `Waiting for ${p.name}…`;
+  else if (t.phase === "harbour") { text = "Choose your harbour: click a ringed harbour on the map."; guide = "Your canals begin at your harbour. A deep harbour reaches the meadows sooner, and costs some of your starting money."; }
+  else if (t.phase === "startTech") { text = "Choose your starting craft."; guide = "Your lodge holds crafts: lasting abilities. Each building you place later empties a lodge slot and gives you its craft and income. This one is free."; }
+  else if (t.phase === "choose") {
+    text = sel.play === null ? "Choose a card to play." : "Boost it? Click other cards to discard them, then press Play.";
+    guide = sel.play === null
+      ? "Each turn you play one card. Cards you keep in hand move your pearl track; a full track gives a pearl. No good card? Forage: discard for money."
+      : "A boost is the line after 'Discard': discard that many other cards for the extra. Or play it plain.";
+  } else {
+    const pool = t.pool, todo = [];
+    if (pool.dig > 0) todo.push(`click a dashed border to dig (${pool.dig} left)`);
+    if (pool.build > 0) todo.push(`click a highlighted hex to build (${pool.build} left)`);
+    if (pool.buy > 0) todo.push(`click a market card to buy (${pool.buy} left)`);
+    if ((pool.trashAny || 0) + (pool.trashHand || 0) + (pool.trashDiscard || 0) > 0) todo.push("click a card to remove it from your deck");
+    text = todo.length ? cap(todo.join("; ")) + ". Then End turn." : "Nothing left to do: End turn.";
+    guide = pool.dig > 0 ? "Canals start at your harbour's mouth and must join the water. Every hex your canals open is open water: points for your Open water current."
+      : pool.build > 0 ? "Build where one of your own canals runs. A building scores, and empties a lodge slot: you gain its income and craft."
+      : pool.buy > 0 ? "A bought card goes to your discard pile: you'll draw it in a later turn."
+      : "Your hand refills at the end of the turn.";
+  }
+  const guiding = acting && guideOn();
+  return h("div", { class: "prompt-bar", role: "status", "aria-live": "polite" },
+    h("div", { class: "prompt-main" }, crest(p, state.current), h("span", {}, text)),
+    guiding && guide ? h("div", { class: "guide" }, h("span", { class: "guide-tag" }, "Guide"), guide,
+      h("button", { class: "ghost small-btn", onclick: () => { store.set("canals.guided", true); renderGame(); } }, "Hide the guide")) : null);
+}
+const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+/** The guide shows for a player's first game: until they hide it, or their sixth turn. */
+function guideOn() {
+  if (store.get("canals.guided")) return false;
+  const pi = state.current;
+  return (state.history || []).filter((r) => r.player === pi).length < 6;
+}
+
+/** Settings: codes on cards, motion, sound, theme. */
+function settingsMenu() {
+  const flip = (k, v) => { store.set(k, v); renderGame(); };
+  return h("details", { class: "settings" }, h("summary", { class: "ghost-btn" }, "Settings"),
+    h("div", { class: "settings-box" },
+      h("label", { class: "row" }, h("input", { type: "checkbox", checked: showCodes || null, onchange: (e) => { showCodes = e.target.checked; store.set("canals.codes", showCodes); renderGame(); } }), "Show card codes (D2: +1D)"),
+      h("label", { class: "row" }, h("input", { type: "checkbox", checked: store.get("canals.motion") !== false || null, onchange: (e) => flip("canals.motion", e.target.checked) }), "Animations"),
+      h("label", { class: "row" }, h("input", { type: "checkbox", checked: !!store.get("canals.sound") || null, onchange: (e) => flip("canals.sound", e.target.checked) }), "Sound"),
+      h("label", { class: "row" }, h("input", { type: "checkbox", checked: !store.get("canals.guided") || null, onchange: (e) => flip("canals.guided", !e.target.checked) }), "First-game guide"),
+      h("div", { class: "row" },
+        h("button", { class: "ghost small-btn", onclick: () => download(`canals-game-r${state.round}.json`, JSON.stringify(state)) }, "Save game"),
+        net.role === "guest" ? null : h("button", { class: "ghost small-btn", onclick: async () => { const t = await pickFile(".json"); if (t) resume(JSON.parse(t)); } }, "Load game")),
+      h("button", { class: "ghost small-btn", onclick: () => markConfusing() }, "This confused me…")));
 }
 
 /** "Inland closed: 3 of 8 canals bordering inland hexes." */
@@ -1308,7 +1767,7 @@ function renderJoin(code) {
       h("div", { class: "row wrap" }, name, h("button", { class: "primary", onclick: go }, "Join the table")),
       h("p", { class: "hint" }, "New to the game? Read ", h("a", { href: "#rules", onclick: (e) => { e.preventDefault(); openRules(); } }, "How to play"), " while you wait."),
       shareNotice(),
-      h("div", { class: "row" }, h("button", { class: "ghost", onclick: () => { history.replaceState(null, "", location.pathname + location.search); renderSetup(); } }, "Back")))));
+      h("div", { class: "row" }, h("button", { class: "ghost", onclick: () => { history.replaceState(null, "", location.pathname + location.search); renderHome(); } }, "Back")))));
   name.focus();
 }
 
@@ -1361,7 +1820,7 @@ function leaveTable(show = true) {
   net = { role: "local" };
   state = null;
   document.title = "Canals";
-  if (show) { history.replaceState(null, "", location.pathname + location.search); renderSetup(); }
+  if (show) { history.replaceState(null, "", location.pathname + location.search); renderHome(); }
 }
 
 /** A guest's view before the game starts: who is at the table. */
@@ -1406,26 +1865,74 @@ function report() {
         lanes: sc.lanes, colourCounts: sc.counts, deck, stats: p.stats };
     }),
     history: state.history,
+    timing: state.timing || [],
+    notes: state.notes || [],
+    answers: state.answers || null,
     log: state.log.map((l) => `R${l.round} ${l.msg}`),
   };
+}
+
+/** Three questions after a game, sent with its report (docs/state-of-play.md 5.2). */
+function feedbackForm() {
+  const a = state.answers ||= {};
+  const box = h("section", { class: "feedback" });
+  const choice = (key, opts) => h("div", { class: "choices" }, opts.map((o) =>
+    h("button", { class: a[key] === o ? "on" : "", onclick: () => { a[key] = o; persist(); keepFinished(state); draw(); } }, o)));
+  const text = (key, ph) => {
+    const t = h("textarea", { rows: 2, placeholder: ph, onchange: (e) => { a[key] = e.target.value; keepFinished(state); } });
+    t.value = a[key] || "";
+    return t;
+  };
+  const draw = () => box.replaceChildren(h("h2", {}, "Three questions for the designer"),
+    h("div", { class: "questions" },
+      h("label", {}, h("span", {}, "How long did the game feel?"), choice("length", ["Too short", "About right", "Too long"])),
+      h("label", {}, h("span", {}, "What confused you, if anything?"), text("confused", "A rule, a screen, a moment…")),
+      h("label", {}, h("span", {}, "Would you play again?"), choice("again", ["Yes", "Maybe", "No"])),
+      h("label", {}, h("span", {}, "Anything else?"), text("other", "Optional")),
+      h("div", { class: "row" }, h("button", { class: "primary", onclick: async () => {
+        a.sentAt = Date.now(); keepFinished(state);
+        if (state.reportId) {
+          const info = await siteInfo();
+          const r = await submitReport({ ...report(), site: info.version, channel: info.channel, feedback: true });
+          toast(r.sent ? "Thank you! Sent to the designer." : "Saved with the game's report.");
+        } else toast("Saved with the game's report. Thank you!");
+        draw();
+      } }, a.sentAt ? "Send again" : "Send"), a.sentAt ? h("span", { class: "muted" }, "Thank you!") : null)));
+  draw();
+  return box;
 }
 
 function renderEnd() {
   const rank = E.ranking(state);
   const rep = report();
+  const win = state.players[rank[0].i];
+  const most = (f) => state.players.map((_, i) => i).reduce((a, b) => (f(b) > f(a) ? b : a));
+  const opener = most((i) => E.reach(state, i)), friend = most((i) => state.players[i].keys);
+  const tale = [
+    state.endReason === "keys" ? "The waters reached the high springs." : state.endReason === "market" ? "The market ran dry: no animal was left to hire." : "The season ended.",
+    `${state.players[opener].name} opened the most water (${E.reach(state, opener)} hexes)`,
+    state.players[friend].keys ? `, and ${state.players[friend].name} made the most friends among the springs (${state.players[friend].keys}).` : ".",
+  ].join(" ");
   app.replaceChildren(h("div", { class: "setup end" },
-    h("header", { class: "top" }, brand("Game over"),
+    h("header", { class: "top" }, brand("Canals"),
       h("span", {}, `${state.round} rounds · ${END_REASON[state.endReason] || "full length"}`,
         state.finishedAt ? h("span", { class: "muted" }, ` · ${new Date(state.finishedAt).toLocaleString()}`) : null)),
+    h("section", { class: "finale" },
+      h("div", { class: "winner" }, crest(win, rank[0].i, "big"), h("div", {}, `${win.name} wins with ${rank[0].total} points`)),
+      h("p", { class: "story" }, tale),
+      h("div", { class: "podium" }, rank.map((r, k) => h("div", { class: k === 0 ? "first" : "" },
+        scoreWheel(E.score(state, r.i), k === 0 ? 150 : 110, r.i), h("b", {}, `${k + 1}. ${r.name}`),
+        h("span", { class: "muted" }, r.lanes.map((l) => `${CURRENTS[l.mult].name} ${l.total}`).join(" · ")))))),
+    net.role === "guest" ? null : feedbackForm(),
     h("section", {}, h("h2", {}, "Scores"),
       h("table", { class: "decks" },
         h("thead", {}, h("tr", {}, h("th", {}, "Player"),
-          rank[0].lanes.map((l) => h("th", {}, icon(ROLE_ICON[l.mult]), ` ${ROLES[l.mult].label} × ${l.score}`)), h("th", {}, "Total"), h("th", {}, "Money (tiebreak)"))),
+          rank[0].lanes.map((l) => h("th", {}, icon(ROLE_ICON[l.mult]), ` ${CURRENTS[l.mult].name}: ${ROLE_WORD[l.mult]} × ${CURRENTS[l.mult].what}`)), h("th", {}, "Total"), h("th", {}, "Money (tiebreak)"))),
         h("tbody", {}, rank.map((r) => h("tr", {},
           h("td", {}, crest(state.players[r.i], r.i), " ", r.name),
           r.lanes.map((l) => h("td", { class: "n" }, `${l.m} × ${l.s} = ${l.total}`)),
           h("td", { class: "n" }, h("b", {}, r.total)), h("td", { class: "n" }, r.money)))))),
-    h("section", {}, h("h2", {}, "Playtest stats"),
+    h("section", {}, h("details", {}, h("summary", {}, h("b", {}, "Playtest stats")),
       h("table", { class: "decks" },
         h("thead", {}, h("tr", {}, ["Player", "Turns", "Boosted", "Avg discards", "Digs", "Reach", "Discoveries", "Builds (by type)", "Buys", "Earns", "Trashed", "Earned", "Spent", "Final income", "Final deck", "Plays by colour"].map((t) => h("th", {}, t)))),
         h("tbody", {}, rep.players.map((p) => h("tr", {},
@@ -1438,16 +1945,16 @@ function renderEnd() {
           h("td", { class: "n" }, p.stats.trashed), h("td", { class: "n" }, p.stats.earned), h("td", { class: "n" }, p.stats.spent),
           h("td", { class: "n" }, p.income),
           h("td", {}, Object.entries(p.colourCounts).filter(([, c]) => c).map(([r, c]) => h("span", { class: `pill c-${ROLES[r].colour}` }, icon(ROLE_ICON[r]), ` ${c}`))),
-          h("td", {}, Object.entries(p.stats.playedByRole).map(([r, c]) => h("span", { class: `pill c-${ROLES[r].colour}` }, icon(ROLE_ICON[r]), ` ${c}`)))))))),
+          h("td", {}, Object.entries(p.stats.playedByRole).map(([r, c]) => h("span", { class: `pill c-${ROLES[r].colour}` }, icon(ROLE_ICON[r]), ` ${c}`))))))))),
     h("section", {}, h("details", {},
       h("summary", {}, h("b", {}, "Game log"), h("span", { class: "muted" }, ` (${state.log.length} entries)`)),
-      h("div", { class: "log full" }, state.log.map((l) => h("div", {}, h("span", { class: "muted" }, `R${l.round} `), l.msg))))),
+      h("div", { class: "log full" }, state.log.map((l) => h("div", {}, h("span", { class: "muted" }, `R${l.round} `), themeLog(state, l.msg)))))),
     h("div", { class: "start row wrap" },
       h("button", { class: "ghost", onclick: () => download("canals-report.json", JSON.stringify(rep, null, 2)) }, "Download report (JSON)"),
       h("button", { class: "ghost", onclick: () => download("canals-log.txt", rep.log.join("\n"), "text/plain") }, "Download log (text)"),
       net.role === "guest" ? h("button", { class: "primary", onclick: () => leaveTable() }, "Leave the table") : [
         h("button", { class: "ghost", onclick: () => { setup.seed = (Number(setup.seed) || 0) + 1; saveSetup(); startGame(); } }, "Rematch (next seed)"),
-        h("button", { class: "primary", onclick: renderSetup }, "New game")])));
+        h("button", { class: "primary", onclick: renderHome }, "New game")])));
 }
 
 // --------------------------------------------------------------------------- //
@@ -1504,7 +2011,7 @@ function learnLanes(g) {
   try {
     setData(await loadRepoData());
     const joining = location.hash.match(/^#join=([A-Za-z0-9]+)/);
-    if (joining) renderJoin(cleanCode(joining[1])); else renderSetup();
+    if (joining) renderJoin(cleanCode(joining[1])); else renderHome();
     flushReports();   // anything a previous visit couldn't send
     if (location.hash === "#rules") openRules();
     addEventListener("hashchange", () => { if (location.hash === "#rules" && !document.querySelector(".rules-overlay")) openRules(); });

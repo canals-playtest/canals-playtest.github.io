@@ -3,6 +3,7 @@
 // text cannot drift from the table it describes.
 import { icon, ROLE_ICON, hasSymbol } from "./sprites.js";
 import * as E from "./engine.js";
+import { rename } from "./words.js";
 
 function h(tag, attrs = {}, ...kids) {
   const n = document.createElement(tag);
@@ -16,7 +17,7 @@ function h(tag, attrs = {}, ...kids) {
 }
 
 const plural = (n, word, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
-const ROLE_NAME = { dig: "Dig", build: "Build", buy: "Buy", earn: "Earn", special: "Special" };
+const ROLE_NAME = { dig: "Dig", build: "Build", buy: "Buy", earn: "Earn", special: "Guide" };
 const ROLE_COLOUR = { dig: "brown", build: "green", buy: "blue", earn: "yellow", special: "purple" };
 const role = (r) => h("b", { class: `dot c-${ROLE_COLOUR[r]}` }, icon(ROLE_ICON[r]), " ", ROLE_NAME[r]);
 
@@ -46,7 +47,9 @@ export function rulesView(game, extra = {}) {
   const weighted = Object.keys(weights).length > 0;
   const w = (deck) => weights[deck] ?? 1;
   const split = !!c.inlandDisplay;
-  const ends = [c.endOnMarket ? "the market decks run out" : null, c.endOnKeys ? (c.endKeysBand ? `every key tile in the ${c.endKeysBand} is on the network` : "every key tile is on the network") : null].filter(Boolean);
+  const share = Number(c.endKeysShare ?? 1);
+  const ends = [c.endOnMarket ? "the market decks run out" : null,
+    c.endOnKeys ? `the waters reach the high springs (${share >= 1 ? "every" : `${Math.round(share * 100)}% of the`} spring village${share >= 1 ? "" : "s"}${c.endKeysBand ? ` in the ${c.endKeysBand}` : ""} on the network)` : null].filter(Boolean);
   const endLine = ends.length
     ? `The game ends at the end of the round in which ${ends.join(", or ")} (after round ${c.rounds} at the latest)`
     : `The game ends after round ${c.rounds}`;
@@ -59,6 +62,8 @@ export function rulesView(game, extra = {}) {
   const tokenNames = [...new Set(Object.values(game.tokens || {}).map((t) => `${t.name} ${t.code}`))];
   const tokens = tokenNames.length ? tokenNames.join(", ") : "";
 
+  const lodge = !!(c.techBoard && c.techBoard !== "off");
+  const prizes = E.prizeList ? E.prizeList(game) : [];
   const sections = [
     ["goal", "The goal"], ["stuff", "What you have"], ["setup", "Setting up"], ["turn", "Your turn"],
     ["actions", "The actions"], ["map", "The map"], ["buildings", "Buildings"], ...(mats ? [["resources", "Resources"]] : []),
@@ -70,9 +75,9 @@ export function rulesView(game, extra = {}) {
   const steps = E.multiplierSteps(c);
   const lanes = [
     ["dig", "i-dig", "Dig cards", "×", "your buildings' VP", `Each building scores ${c.vpPerBuilding} VP${typed ? ", unless its type says otherwise" : ""}.`],
-    ["build", "i-build", "Build cards", "×", "your deck's VP", "The VP printed on cards you own (Special cards carry it)."],
-    ["buy", "i-buy", "Buy cards", "×", "your Reach", `${c.vpPerReach} for every inland hex your canals opened.`],
-    ["special", "i-special", "Special cards", "×", "your keys", `${c.vpPerKey} VP for each key.`],
+    ["build", "i-build", "Build cards", "×", "your deck's VP", "The VP printed on cards you own (Guides carry most of it)."],
+    ["buy", "i-buy", "Buy cards", "×", "your open water", `Every opened hex your canals touch: ${bandPts} by band (coast / meadows / highland)${feats.marsh ? `, a marsh ${feats.marsh.reachBonus} more` : ""}.`],
+    ["special", "i-special", "Guide cards", "×", "your friendships", `${c.vpPerKey} VP for each friendship with a spring village.`],
   ];
 
   return h("article", { class: "rules", "aria-label": "How to play" },
@@ -86,7 +91,7 @@ export function rulesView(game, extra = {}) {
     } }, t))),
 
     sec("goal",
-      h("p", {}, "Points come from four ", h("b", {}, "lanes"), ". Each lane multiplies ", h("b", {}, "how many cards of one colour you own"),
+      h("p", {}, "Points come from four ", h("b", {}, "currents"), ". Each current multiplies ", h("b", {}, "how many cards of one colour you own"),
         " by a score you build on the map or in your deck:"),
       h("div", { class: "lanes4" }, lanes.map(([r, ic, a, x, b, note]) => h("div", { class: `lane c-${ROLE_COLOUR[r]}` },
         icon(ic, "big"), h("b", {}, `${a} ${x} ${b}`), h("span", { class: "muted" }, note)))),
@@ -95,31 +100,31 @@ export function rulesView(game, extra = {}) {
           w("starting") === 0 ? ", so trashing a starting card costs no points. " : ". "] : "",
         role("earn"),
         " cards score nothing; they are money. No colour multiplies a score its own action builds, so you always need two things at once: ",
-        "the cards for a lane, and the work on the map or in the market that feeds it."),
+        "the cards for a current, and the work on the map or in the market that feeds it."),
       steps ? h("div", { class: "box" }, h("b", {}, "Multipliers in steps. "),
         "Count a colour's cards (weighted as above), then read its multiplier off the steps: ",
         h("table", { class: "steps" },
           h("tr", {}, h("th", {}, "Count"), steps.map(([at], i) => h("td", {}, i + 1 < steps.length ? (steps[i + 1][0] - 1 > at ? `${at}–${steps[i + 1][0] - 1}` : `${at}`) : `${at}+`))),
           h("tr", {}, h("th", {}, "Multiplier"), steps.map(([, m]) => h("td", {}, `×${m}`)))),
-        "Every lane scores at least once, and one more card can take you up a step.") : null,
+        "Every current scores at least once, and one more card can take you up a step.") : null,
       !steps ? h("div", { class: "box" }, h("b", {}, "Example. "), weighted
-        ? `You own 2 coastal and 1 inland Dig card (${2 * w("coastal")} + ${w("inland")} = ${2 * w("coastal") + w("inland")}) and buildings worth 10 VP: that lane scores ${2 * w("coastal") + w("inland")} × 10 = ${10 * (2 * w("coastal") + w("inland"))}. `
-        : `You own 4 Dig cards and buildings worth 10 VP: that lane scores 4 × 10 = 40. `,
-        `With 3 Buy cards and a Reach of 6, the Reach lane scores 3 × ${6 * c.vpPerReach} = ${18 * c.vpPerReach}.`) : null,
-      h("p", { class: "muted" }, "The player panels show each lane as cards × score, and the total if the game ended now.")),
+        ? `You own 2 coastal and 1 inland Dig card (${2 * w("coastal")} + ${w("inland")} = ${2 * w("coastal") + w("inland")}) and buildings worth 10 VP: that current scores ${2 * w("coastal") + w("inland")} × 10 = ${10 * (2 * w("coastal") + w("inland"))}. `
+        : `You own 4 Dig cards and buildings worth 10 VP: that current scores 4 × 10 = 40. `,
+        `With 3 Buy cards and 6 open water, the Open water current scores 3 × 6 = 18.`) : null,
+      h("p", { class: "muted" }, "Your panel draws the four currents as a wheel: each segment is its multiplier × its score, and the centre the total if the game ended now.")),
 
     sec("stuff",
       h("div", { class: "glossary" },
         glossaryItem("i-coin", "Money.", "Pays for digs, builds and cards. The only thing you keep from turn to turn, apart from pearls."),
-        glossaryItem("i-income", "Income.", `What an Earn pays. Starts at ${c.startingIncome}; each building adds ${c.incomePerBuilding}${typed ? " (a Mill more)" : ""}.`),
+        glossaryItem("i-income", "Income.", `What an Earn pays. Starts at ${c.startingIncome}; ` + (lodge ? "each building adds what its lodge slot shows (+1 on the inner ring, nothing on the outer; a Mill 1 more)." : `each building adds ${c.incomePerBuilding}${typed ? " (a Mill more)" : ""}.`)),
         glossaryItem("i-hand", "Hand.", `You hold ${c.handSize} cards (more with +1S, up to ${c.handSizeCap}).`),
         glossaryItem("i-deck", "Deck.", "Your cards: draw pile, hand and discard pile. Bought cards go to your discard pile."),
         c.pearls ? glossaryItem("i-pearl", "Pearls.", c.pearlEarning === "track"
           ? `Earned on your pearl track, one space for each card you keep at the end of a turn; at most ${c.pearlCap}. Spent on later turns.`
           : `Earned by keeping your cards; at most ${c.pearlCap}. Spent on later turns.`) : null,
-        glossaryItem("i-key", "Keys.", "One for each building on a key tile."),
-        glossaryItem("i-reach", "Reach.", "Inland hexes your canals opened (see The map)."),
-        mats ? glossaryItem("cube-clay", "Cubes.", "Clay, wood and stone on the board, taken by builds. Nobody holds them.") : null)),
+        glossaryItem("i-key", "Friendships.", `One for each spring village you build in${c.keysPerHighland > 1 ? ` (${c.keysPerHighland} in the highland)` : ""}.`),
+        glossaryItem("i-reach", "Open water.", "The opened hexes your canals touch (see The map)."),
+        mats && c.hauling !== "tolls" ? glossaryItem("cube-clay", "Cubes.", "Clay, wood and stone on the board, taken by builds. Nobody holds them.") : null)),
 
     sec("setup",
       h("ol", {},
@@ -127,14 +132,15 @@ export function rulesView(game, extra = {}) {
         h("li", {}, "Each player takes a starting deck", deckSize ? ` of ${deckSize} cards (` : "", deck.map(([r, n], i) => [i ? ", " : "", `${n} ${ROLE_NAME[r]}`]), deckSize ? ")" : "",
           `, shuffles it and draws ${c.handSize}.`),
         h("li", {}, `Each player starts with ${c.startingPurse} money and income ${c.startingIncome}.`),
-        c.ownHarbours ? h("li", {}, "Each player takes a harbour, spread along the coast in seat order (the first player the one furthest left). Any other harbours belong to nobody.") : null,
+        c.ownHarbours ? h("li", {}, c.harbourDraft ? "Each player chooses a harbour, the last seat first (see Dig). Any other harbours belong to nobody."
+          : "Each player takes a harbour, spread along the coast in seat order (the first player the one furthest left). Any other harbours belong to nobody.") : null,
         c.deckSizes ? h("li", {}, "Fewer players use fewer market cards. Before shuffling, set aside copies until each deck holds: ",
           h("table", { class: "steps" }, h("tr", {}, h("th", {}, "Players"), [2, 3, 4, 5].map((n) => h("td", {}, n))),
             String(c.deckSizes).split(",").map((part) => part.split("=").map((x) => x.trim())).filter(([d, v]) => d && v)
               .map(([d, v]) => h("tr", {}, h("th", {}, d), v.split("/").map((n) => h("td", {}, n))))),
           "Set aside Earn copies first, then from the design with the most copies; every design keeps at least one.") : null,
-        h("li", {}, "Make the market decks. Shuffle the ", h("b", {}, "coastal"), " cards and the ", h("b", {}, "coastal-2"),
-          " cards separately and stack the coastal cards on top; do the same with the ", h("b", {}, "inland"), " and ", h("b", {}, "inland-2"), " cards. ",
+        h("li", {}, "Make the market decks. Shuffle the ", h("b", {}, "coast"), " cards and the ", h("b", {}, "seasoned coast"),
+          " cards separately and stack the coast cards on top; do the same with the ", h("b", {}, "meadow"), " and ", h("b", {}, "seasoned meadow"), " cards. ",
           `Lay ${c.displaySize} coastal cards face up. `, split ? "The inland deck waits face down until the inland opens." : "The inland deck waits until the inland opens, then joins the coastal deck."),
         mats ? h("li", {}, `Fill the import market: ${track.length} cubes each of clay, wood and stone.`) : null)),
 
@@ -175,33 +181,35 @@ export function rulesView(game, extra = {}) {
         : c.buildNeedsNetwork ? " that is on the network (a linked canal runs along one of its borders)" : "", ". ",
         `Pay the hex's build cost (${cost("buildCost")})${typed ? ", plus the building type's extra cost" : ""}${mats ? ", plus the cubes it needs" : ""}. `,
         c.techBoard && c.techBoard !== "off" ? "Its token comes from your board, and it raises your income by what that slot shows (see Buildings). "
-          : `Each building raises your income by ${c.incomePerBuilding}. `, "A building on a key tile gives you a key. One building per hex."),
+          : `Each building raises your income by ${c.incomePerBuilding}. `,
+        c.villageSlots > 1 ? `A building in a spring village makes a friendship with it${c.keysPerHighland > 1 ? ` (two in the highland)` : ""}; up to ${c.villageSlots} players may each build one there. Elsewhere, one building per hex.`
+          : "A building in a spring village makes a friendship with it. One building per hex."),
       h("h3", {}, icon("i-buy"), "Buy"),
       h("p", {}, "Buy one card from the market display: pay its cost and put it on your discard pile. The display refills at once.",
         E.topCost({ config: c }) !== null ? ` Or pay ${c.buyOnTopCost} more to put it on top of your draw pile: you draw it at the end of the turn and can play it on the next.` : "",
         c.trashFloor > 0 ? ` A card that trashes may not take you below ${c.trashFloor} cards.` : ""),
       h("h3", {}, icon("i-earn"), "Earn"),
       h("p", {}, "Take money equal to your income. ", h("code", {}, "Earn 1"), " pays it once."),
-      h("h3", {}, icon("i-special"), "Special"),
-      h("p", {}, "Purple cards do what they say, and carry VP for the deck lane. They help your network in general, but never take keys directly.")),
+      h("h3", {}, icon("i-special"), "Guides"),
+      h("p", {}, "Purple cards, the guides, do what they say, and carry VP for the Deck current. They are what your friendships multiply.")),
 
     sec("map",
       h("div", { class: "glossary" },
         glossaryItem("m-harbour", "Harbours.", "Canals reach the land only here. The dots at a harbour's corners on the sea are its mouths, where canals start."),
         glossaryItem("i-reach", "Corners.", "Canals run along hex borders and join only where they share a corner, like roads in Catan."),
-        glossaryItem("m-key", "Key tiles.", `Build here for a key: ${c.vpPerKey} VP, times your Special cards.`),
+        glossaryItem("m-key", "Spring villages.", `Build here for a friendship: ${c.vpPerKey} VP, times your Guide cards.`),
         glossaryItem("m-discovery", "Discoveries.", "A one-off bonus, such as +2M. The dig that opens the hex takes it."),
-        bands ? glossaryItem("i-reach", "Three bands.", `The coast, the inland and the highland, each dearer to dig and build on (${cost("digCost")}). An opened hex is worth ${bandPts} Reach, coast / inland / highland.`) : null,
+        bands ? glossaryItem("i-reach", "Three bands.", `The coast, the meadows (inland) and the highland, each dearer to dig and build on (${cost("digCost")}). An opened hex is worth ${bandPts} open water, coast / meadows / highland.`) : null,
         bands ? glossaryItem("i-dig", "The highland.", c.highlandNeedsBought ? "Only bought dig cards dig a border that touches the highland; starting cards can't." : "Dug like anywhere else, at its higher cost.") : null,
         hasLakes ? glossaryItem("i-reach", "Lakes.", "Inland water. Once a linked canal reaches one of a lake's corners, all its corners are linked: a free junction to the far side.") : null,
         feats.hills ? glossaryItem("i-dig", "Hills.", `Inland and highland: +${feats.hills.digMod} to dig a border beside them, and a building on hills scores +${feats.hills.vpBonus} VP. The stone is in the hills.`) : null,
-        feats.marsh ? glossaryItem("i-reach", "Marsh.", `${-feats.marsh.digMod} cheaper to dig, no building site, and +${feats.marsh.reachBonus} Reach when opened.`) : null,
+        feats.marsh ? glossaryItem("i-reach", "Marsh.", `${-feats.marsh.digMod} cheaper to dig, no building site, and +${feats.marsh.reachBonus} open water when opened.`) : null,
         tokens ? glossaryItem("m-discovery", "Site tokens.", `Dealt face up on marked sites each game (${tokens}). The first building on the site takes it, as part of the card that built it.`) : null,
         hasCrags ? glossaryItem("i-dig", "Crags.", "A ridge before the highland: no building site, and no canal between two crags. Go through a pass.") : null,
         mats ? glossaryItem("m-forest", "Forests, mountains, clay beds.", "Sources of wood, stone and clay (see Resources).") : null),
-      h("h3", {}, "Opening hexes: your Reach"),
+      h("h3", {}, "Opening hexes: your open water"),
       h("p", {}, "A land hex is ", h("b", {}, "opened"), " when a linked canal runs along one of its borders and the hex does not touch open water. ",
-        "Hexes beside the sea were always reachable, so they never count. ", h("b", {}, "Your Reach"),
+        "Hexes beside the sea were always reachable, so they never count. ", h("b", {}, "Your open water"),
         " is the number of opened hexes that touch at least one of your own canals. Two players whose canals touch the same opened hex both count it. ",
         "On the board, opened hexes are drawn brighter, with a blue outline."),
       c.inlandMilestone && c.inlandMilestone !== "none" ? [
@@ -217,28 +225,28 @@ export function rulesView(game, extra = {}) {
 
     sec("buildings",
       typed ? [
-        h("p", {}, "When you build, choose a type. Each has the plain building's effect (", `${c.vpPerBuilding} VP, +${c.incomePerBuilding} income`,
-          ") unless it says otherwise, plus its own."),
+        h("p", {}, "When you build, choose a type. Each scores ", `${c.vpPerBuilding} VP`, " unless it says otherwise, ",
+          lodge ? "and raises your income by what its lodge slot shows" : `and raises your income by ${c.incomePerBuilding}`, "; then its own effect."),
         h("table", {},
           h("thead", {}, h("tr", {}, ["", "Type", "Cost", mats ? "Needs" : null, "Effect", "Limit"].filter((x) => x !== null).map((t) => h("th", {}, t)))),
           h("tbody", {}, types.map((bt) => h("tr", {},
             h("td", { style: "--pc:#c96f4a" }, icon(hasSymbol(`b-${bt.id}`) ? `b-${bt.id}` : "b-plain", "", null, "#c96f4a")),
-            h("td", {}, h("b", {}, bt.name)),
+            h("td", {}, h("b", {}, rename(bt.name))),
             h("td", {}, bt.extraCost ? `site +${bt.extraCost}` : "site"),
             mats ? h("td", {}, (bt.needs || []).length ? bt.needs.map((r) => [icon(`cube-${r}`), " "]) : "—") : null,
             h("td", {}, bt.rules),
-            h("td", {}, c.techBoard && c.techBoard !== "off" ? "on your board" : bt.supply ? `${bt.supply} per player` : "—"))))),
-        c.techBoard && c.techBoard !== "off" ? h("div", { class: "box" }, h("b", {}, "Your board. "),
-          "Every building you build comes from your own board: a honeycomb of eighteen tokens around an open centre, six on the inner ring and twelve on the outer. ",
+            h("td", {}, lodge ? "in your lodge" : bt.supply ? `${bt.supply} per player` : "—"))))),
+        c.techBoard && c.techBoard !== "off" ? h("div", { class: "box" }, h("b", {}, "Your lodge. "),
+          "Every building you build comes from your own lodge: a honeycomb of eighteen tokens around an open centre, six on the inner ring and twelve on the outer. ",
           "Take the token from a slot ", h("b", {}, "next to an open one"), ": the centre, or a slot you have already emptied. ",
           `To take one from anywhere else, pay ${c.techLeapCost} pearl (a leap). When the tokens of a type are gone, you build no more of it. `,
           "Buildings raise your income only by what their slot shows: +1 under each inner slot, nothing under the outer ones (a Mill adds its own +1). ",
-          "The Mill, Quarry, Inn and Lock sit only on the outer ring",
+          "The Mill, Quarry, Holt and Lock sit only on the outer ring",
           c.techTideGate ? ", which opens at the second tide. " : ". ",
-          c.startingTech ? [h("b", {}, "Starting technology. "), "After the harbours, in seat order, each player opens one inner slot: its technology and income are yours from the start, and its token goes back in the box. No two players the same. "] : "",
-          ["level1", "level2", "full"].includes(c.techBoard) ? [" ", h("b", {}, "Technologies. "),
-            `Each ${c.techBoard === "level1" ? "inner " : ""}slot also prints a technology: when you build its token, the technology is yours for the rest of the game. `,
-            "Hover a slot on your board to read it. The inner ring: ",
+          c.startingTech ? [h("b", {}, "Starting craft. "), "After the harbours, in seat order, each player opens one inner slot: its craft and income are yours from the start, and its token goes back in the box. No two players the same. "] : "",
+          ["level1", "level2", "full"].includes(c.techBoard) ? [" ", h("b", {}, "Crafts. "),
+            `Each ${c.techBoard === "level1" ? "inner " : ""}slot also prints a craft: when you build its token, the craft is yours for the rest of the game. `,
+            "Your panel lists them. The inner ring: ",
             h("i", {}, "Dredging"), " (your first dig each turn costs 1 less, never below 1), ",
             h("i", {}, "Scaffolding"), " (every site costs you 1 less, never below 1), ",
             h("i", {}, "Barge"), " (one toll fewer on each build), ",
@@ -247,11 +255,11 @@ export function rulesView(game, extra = {}) {
             h("i", {}, "Diving"), " (pearl threshold 1 lower; hold 2 more pearls).",
             c.techBoard !== "level1" ? [" The outer ring holds four ", h("b", {}, "board boosts"),
               " (Relay, Yard, Barter, Larder): printed boosts for a colour, used instead of the card's own boost, never both."] : "",
-            c.techBoard === "full" ? [" ", h("b", {}, "Capstones. "),
-              c.techTideGate ? "From the third tide, the" : "The", " first player to empty all three slots of a sector takes its capstone",
+            c.techBoard === "full" ? [" ", h("b", {}, "Masteries. "),
+              c.techTideGate ? "From the third tide, the" : "The", " first player to empty all three slots of a sector takes its mastery",
               c.capstoneLimit ? ` (at most ${c.capstoneLimit} a player)` : "", ": ",
-              Object.values(E.CAPSTONES).map((x, i, a) => [h("i", {}, x.name), ` (${x.text.replace(/\.$/, "")})`, i < a.length - 1 ? "; " : "."])] : ""] : "") : null,
-        h("p", { class: "muted" }, "Hover a building on the board for its rule. Building something other than an extractor on a forest, mountain or clay bed uses the resource up."),
+              Object.values(E.CAPSTONES).map((x, i, a) => [h("i", {}, rename(x.name)), ` (${x.text.replace(/\.$/, "")})`, i < a.length - 1 ? "; " : "."])] : ""] : "") : null,
+        h("p", { class: "muted" }, "Hover a building on the board for its rule.", mats && c.hauling !== "tolls" ? " Building something other than an extractor on a forest, mountain or clay bed uses the resource up." : ""),
       ] : h("p", {}, `Every building scores ${c.vpPerBuilding} VP and raises your income by ${c.incomePerBuilding}.`)),
 
     mats && c.hauling === "tolls" ? sec("resources",
@@ -300,18 +308,22 @@ export function rulesView(game, extra = {}) {
     sec("market",
       c.tides && c.inlandMilestone !== "none" ? h("div", { class: "box" }, h("b", {}, "Three tides. "),
         "The game has three acts. ", h("b", {}, "The first tide"), " is the start: the coast and the coastal cards. ",
-        h("b", {}, "The second"), " comes with the inland milestone: the inland opens, and the coastal tier-1 cards still in the deck leave the game, so the coastal deck is tier 2 from then",
+        h("b", {}, "The second"), " comes with the inland milestone: the meadows open, and the first coast cards still in the deck leave the game, so the coast deck is seasoned from then",
         c.tidesLiftStarters ? "; starting dig cards may join anyone's canals. " : ". ",
-        h("b", {}, "The third"), " comes when the first highland village is on the network, or when the coastal deck runs out: starting dig cards may dig in the highland, and the inland tier-1 cards still in the deck leave the game. ",
+        h("b", {}, "The third"), " comes when the first highland village is on the network, or when the coast deck runs out: starting dig cards may dig in the highland, and the first meadow cards still in the deck leave the game. ",
         c.tideReward ? `The player who links that village takes ${c.tideReward}. ` : "",
         "Cards already on display stay.") : null,
+      prizes.length ? h("div", { class: "box" }, h("b", {}, "Prizes of the coast. "),
+        "Before the second tide, the first player to reach each of these takes its prize: ",
+        prizes.map((x, i) => [h("i", {}, x.name), ` (${x.code})`, i < prizes.length - 1 ? "; " : ". "]),
+        "After the second tide, the ones left are gone.") : null,
       h("p", {}, split
         ? [`There are two market decks, each with its own display of ${c.displaySize} cards: coastal from the start, inland once the inland opens. `,
           "Buying a card refills its display from its own deck. If the coastal deck and display run out before the inland opens, there is nothing to buy until it does."]
         : [`${c.displaySize} cards lie face up. Buying one refills the display from the market deck. `,
           "Only coastal cards are in it at first; the inland cards join when the inland opens."]),
-      h("p", {}, "Each deck comes in two tiers: the tier-2 cards (", h("b", {}, "coastal-2"), ", ", h("b", {}, "inland-2"),
-        ") come out once tier 1 is used up. They do two actions or more from one card: by then, a starting card is a weak draw, and trashing it is worth a turn."),
+      h("p", {}, "Each deck comes in two parts: the ", h("b", {}, "seasoned"), " animals come out once the first are used up. ",
+        "They do two actions or more from one card: by then, a starting card is a weak draw, and trashing it is worth a turn."),
       c.marketClock && c.marketClock !== "off" ? h("p", {}, h("b", {}, "The market clock. "),
         c.marketClock === "unbought"
           ? "At the end of every round, in each display nobody bought from that round, the card that has been there longest leaves the game, and the display refills. "
@@ -321,11 +333,11 @@ export function rulesView(game, extra = {}) {
       h("p", {}, "Each card shows its colour and action in the band, its cost on the coin, its effect, and below that its boost: what to discard, then what it gives.")),
 
     sec("end",
-      h("p", {}, `${endLine}. Everyone has had the same number of turns. Score the four lanes; the most points wins. Ties go to the player with more money.`),
-      ends.length ? h("p", { class: "muted" }, "Rushing the key tiles ends the game early; building up a deck and buying through the market makes it longer.") : null),
+      h("p", {}, `${endLine}. Everyone has had the same number of turns. Score the four currents; the most points wins. Ties go to the player with more money.`),
+      ends.length ? h("p", { class: "muted" }, "Racing for the high springs ends the game early; building up a deck and buying through the market makes it longer.") : null),
 
     sec("notation",
-      h("p", {}, "Card effects use short codes. Hover a code on any card for its meaning."),
+      h("p", {}, "Cards are written out in words. The designer's short codes, for those who want them (Settings, Show card codes):"),
       h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "Code"), h("th", {}, "Means"))),
         h("tbody", {}, (extra.notation || []).filter((n) => n.code).map((n) => h("tr", {}, h("td", {}, h("code", {}, n.code)), h("td", {}, n.meaning)))))),
   );

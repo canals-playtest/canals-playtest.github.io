@@ -1,6 +1,13 @@
 // SVG rendering of the hex board. Pointy-top axial layout, matching tools/build_board.py.
 import * as E from "./engine.js";
 import { TERRAIN_PATTERN, hasSymbol } from "./sprites.js";
+import { placeName, harbourName, rename } from "./words.js";
+
+// What the last drawing of this game showed, so new canals, buildings and
+// opened hexes can be drawn arriving (docs/state-of-play.md 5.3).
+let seen = null;
+/** Dash patterns for each seat's canal banks: a mark besides colour. */
+const BANK_DASH = ["", "7 2.5", "2.5 2.5", "8 2 2 2", "4 4"];
 
 const S = 30; // circumradius in SVG units
 const SQ3 = Math.sqrt(3);
@@ -66,6 +73,10 @@ export function renderBoard(svg, state, handlers) {
   const haul = mats ? E.hauls(state, link) : undefined;
   const CAMP = { clay: "clay pit", wood: "logging camp", stone: "quarry" };
 
+  // Animate only what changed since the last drawing of this same game.
+  const gameId = `${state.config.seed}|${state.players.map((p) => p.name).join(",")}`;
+  const fresh = !handlers.still && seen?.game === gameId;
+  const now = { game: gameId, dug: new Set(), built: new Set(), opened: new Set() };
   const gHex = el("g", {}, svg), gShore = el("g", { class: "shore" }, svg), gEdge = el("g", {}, svg), gTop = el("g", {}, svg);
 
   // The coastline: an inked line wherever land meets water or the edge of the map.
@@ -85,24 +96,24 @@ export function renderBoard(svg, state, handlers) {
     const poly = el("polygon", {
       points: corners(cx, cy).map((p) => p.join(",")).join(" "),
       fill: TERRAIN_PATTERN[h.terrain] ? `url(#${TERRAIN_PATTERN[h.terrain]})` : t.fill,
-      class: "hex" + (t.water ? " water" : ""),
+      class: "hex" + (t.water ? " water" : ""), "data-hex": h.key,
     }, gHex);
-    const title = [`${h.key} · ${t.name}`];
+    const title = [`${h.harbour ? harbourName(state, h.key) : placeName(state, h.key)} · ${t.name}`];
     if (!t.water) title.push(`dig ${t.digCost} · build ${t.buildCost}`);
     const owner = (state.harbours || []).indexOf(h.key);
     if (h.harbour) title.push(owner >= 0
       ? `${state.players[owner].name}'s harbour: ${state.players[owner].name}'s starting dig cards start here or from their own canals; bought dig cards may join anyone's`
       : state.harbours?.length ? "harbour (nobody's): only bought dig cards start here" : "harbour: canals may enter the land only here");
-    if (h.shore) title.push("shore: beside open water, so it never counts for Reach");
+    if (h.shore) title.push("shore: beside the sea, so it never counts as open water");
     if (h.feature === "hills") title.push("hills: +1 to dig its borders; a building here scores +1 VP");
-    if (h.feature === "marsh") title.push("marsh: 1 cheaper to dig, no building site, +1 Reach when opened");
+    if (h.feature === "marsh") title.push("marsh: 1 cheaper to dig, no building site, +1 open water when opened");
     if (state.tokens?.[h.key]) title.push(`token site: ${state.tokens[h.key].name} (${state.tokens[h.key].code}) for the first building`);
-    if (h.band && !t.water) title.push(`${h.band}: Reach ${E.hexReach(state, h.key)} if opened`);
+    if (h.band && !t.water) title.push(`${h.band}: ${E.hexReach(state, h.key)} open water if opened`);
     if (t.wall) title.push("crag: no site, and no canal between two crags");
     if (t.water && h.band) title.push("lake: once a linked canal reaches one of its corners, all its corners are linked");
     if (h.band === "highland" && state.config.highlandNeedsBought) title.push("highland: only bought dig cards dig here");
     if (E.inlandClosed(state) && E.isInland(state, h.key)) title.push("closed until the inland milestone: canals may run along its border with the coast, but none with inland on both sides, and nothing is built here");
-    if (E.isOpened(state, h.key, net)) title.push("opened: counts for Reach for every player whose canal touches it");
+    if (E.isOpened(state, h.key, net)) title.push("opened: counts as open water for every player whose canal touches it");
     if (h.bonus) title.push(state.claimed[h.key] !== undefined
       ? `discovery ${h.bonus}: taken by ${state.players[state.claimed[h.key]].name}`
       : `discovery ${h.bonus}: the dig that opens this hex takes it`);
@@ -125,7 +136,7 @@ export function renderBoard(svg, state, handlers) {
         : built ? `${word}, used up: the building here supplies no ${h.material}`
         : `${word}: ${typed ? `build a ${CAMP[h.material]} here to put` : `a building here becomes a ${CAMP[h.material]}, putting`} ${h.material} cubes on the hex, sold at ${state.config.extractionFee} each to its owner`);
     }
-    if (h.isKey) title.push("key tile: building here gives a key");
+    if (h.isKey) title.push(`spring village: building here makes a friendship${state.config.keysPerHighland > 1 && h.band === "highland" ? ` (${state.config.keysPerHighland} in the highland)` : ""}${state.config.villageSlots > 1 ? `; up to ${state.config.villageSlots} players may each build one` : ""}`);
     if (showHubs && state.hubs.includes(h.key)) title.push("hub: a canal route from water to here completes a crossing");
 
     if (canBuildAny && E.canBuild(state, h.key, handlers.buildType).ok) {
@@ -136,7 +147,7 @@ export function renderBoard(svg, state, handlers) {
     }
     el("title", {}, poly).textContent = title.join("\n");
 
-    if (E.isOpened(state, h.key, net)) poly.classList.add("opened");
+    if (E.isOpened(state, h.key, net)) { poly.classList.add("opened"); if (fresh && !seen.opened.has(h.key)) poly.classList.add("ripple"); now.opened.add(h.key); }
     if (E.inlandClosed(state) && E.isInland(state, h.key)) poly.classList.add("locked");
     if (showHubs && state.hubs.includes(h.key)) {
       el("circle", { cx, cy, r: S * 0.62, class: "hub" + (state.crossings.some((c) => c.hub === h.key) ? " done" : "") }, gHex);
@@ -192,12 +203,14 @@ export function renderBoard(svg, state, handlers) {
     (state.buildings[h.key] || []).forEach((b, i, arr) => {
       const w = S * 0.98, x = cx + (i - (arr.length - 1) / 2) * w * 0.85, y = cy + S * 0.06;
       const bt = state.buildingTypes.find((t) => t.id === b.type) || state.buildingTypes[0];
-      const g = el("g", { class: "building", style: `--pc:${state.players[b.p].colour}` }, gTop);
+      const bk = `${h.key}#${i}`;
+      const g = el("g", { class: "building" + (fresh && !seen.built.has(bk) ? " drop" : ""), style: `--pc:${state.players[b.p].colour}`, "data-hex": h.key }, gTop);
+      now.built.add(bk);
       el("ellipse", { cx: x, cy: y + w * 0.38, rx: w * 0.42, ry: w * 0.1, class: "shadow" }, g);
       sprite(hasSymbol(`b-${bt.id}`) ? `b-${bt.id}` : "b-plain", x, y, w, g);
-      el("title", {}, g).textContent = `${state.players[b.p].name}'s ${bt.name} — ${E.buildingVP(state, h.key, b)} VP now${state.buildingTypes.length > 1 ? `\n${bt.rules}` : ""}`;
+      el("title", {}, g).textContent = `${state.players[b.p].name}'s ${rename(bt.name)} — ${E.buildingVP(state, h.key, b)} VP now${state.buildingTypes.length > 1 ? `\n${bt.rules}` : ""}`;
     });
-    if (!t.water && !h.isKey && !(state.buildings[h.key] || []).length) {
+    if (handlers.coords && !t.water && !h.isKey && !(state.buildings[h.key] || []).length) {
       el("text", { x: cx, y: cy - S * 0.45, class: "hex-label", fill: t.ink }, gHex).textContent = h.key;
     }
   }
@@ -208,9 +221,12 @@ export function renderBoard(svg, state, handlers) {
     if (owner !== undefined) {
       const stranded = !link.edges.has(e.key);
       // Inked banks in the digger's colour, water down the middle.
-      el("line", { x1, y1, x2, y2, class: "canal-ink" }, gEdge);
-      el("line", { x1, y1, x2, y2, stroke: state.players[owner].colour, class: "canal-bank" + (crossingEdges.has(e.key) ? " crossing" : "") }, gEdge);
-      const l = el("line", { x1, y1, x2, y2, class: "canal-water" + (stranded ? " stranded" : "") }, gEdge);
+      const isNew = fresh && !seen.dug.has(e.key);
+      now.dug.add(e.key);
+      const gc = el("g", { class: "canal" + (isNew ? " draw" : ""), "data-edge": e.key }, gEdge);
+      el("line", { x1, y1, x2, y2, class: "canal-ink", pathLength: 1 }, gc);
+      el("line", { x1, y1, x2, y2, stroke: state.players[owner].colour, "stroke-dasharray": BANK_DASH[owner % BANK_DASH.length] || null, class: "canal-bank" + (crossingEdges.has(e.key) ? " crossing" : "") }, gc);
+      const l = el("line", { x1, y1, x2, y2, class: "canal-water" + (stranded ? " stranded" : ""), pathLength: 1 }, gc);
       el("title", {}, l).textContent = `${state.players[owner].name}'s canal${stranded ? " (not yet linked to the sea)" : ""}`;
     } else if (canDigAny && E.canDig(state, e.key).ok) {
       const cost = E.digCost(state, e.key);
@@ -218,7 +234,7 @@ export function renderBoard(svg, state, handlers) {
       const remote = !E.extendsNetwork(state, e.key, link);
       el("line", { x1, y1, x2, y2, class: "dig-hint" + (remote ? " remote" : "") }, gEdge);
       const hit = el("line", { x1, y1, x2, y2, class: "dig-target" }, gEdge);
-      el("title", {}, hit).textContent = `dig the ${e.a} | ${e.b} border for ${cost}${remote ? " (away from the network: cut off until someone links it to the sea)" : ""}`;
+      el("title", {}, hit).textContent = `dig here for ${cost}${remote ? " (away from the network: cut off until someone links it to the sea)" : ""}`;
       hit.addEventListener("click", () => handlers.onDig(e.key));
     }
   }
@@ -230,7 +246,7 @@ export function renderBoard(svg, state, handlers) {
       const g = el("g", { class: "harbour-choice" }, gTop);
       el("circle", { cx, cy, r: S * 0.78, class: "harbour-ring" }, g);
       if (cost) el("text", { x: cx, y: cy + S * 0.72, class: "bonus", "text-anchor": "middle" }, g).textContent = `−${cost}M`;
-      el("title", {}, g).textContent = `take this harbour${cost ? ` (deep: it costs ${cost} of your starting money)` : ""}`;
+      el("title", {}, g).textContent = `take ${harbourName(state, hk)}${cost ? ` (deep: it costs ${cost} of your starting money)` : ""}`;
       g.addEventListener("click", () => handlers.onHarbour(hk));
     }
   }
@@ -245,6 +261,7 @@ export function renderBoard(svg, state, handlers) {
     if (owner >= 0) dot.setAttribute("style", `stroke: ${state.players[owner].colour}`);
     el("title", {}, dot).textContent = owner >= 0 ? `${state.players[owner].name}'s harbour mouth: canals start here` : "harbour mouth: canals start here";
   }
+  if (!handlers.still) seen = now;
 }
 
 /**
@@ -287,10 +304,10 @@ export function renderTechBoard(state, pi, size = 15) {
     else if (x.income) el("text", { x: cx, y: cy + size * 0.3, "text-anchor": "middle", "font-size": size * 0.8, class: "tech-income" }, g).textContent = `+${x.income}`;
     const bt = state.buildingTypes.find((b) => b.id === x.token);
     const plays = E.techLevel(state) >= (x.ring === "inner" ? 1 : 2);
-    if (plays && gone) el("text", { x: cx, y: cy - size * 0.35, "text-anchor": "middle", "font-size": size * 0.42, class: "tech-name" }, g).textContent = x.name;
-    el("title", {}, g).textContent = `${x.sector}, ${x.ring === "inner" ? "inner" : "outer"} slot: ${gone ? "built" : `${bt?.name || x.token} token`}`
+    if (plays && gone) el("text", { x: cx, y: cy - size * 0.35, "text-anchor": "middle", "font-size": size * 0.42, class: "tech-name" }, g).textContent = rename(x.name);
+    el("title", {}, g).textContent = `${x.sector}, ${x.ring === "inner" ? "inner" : "outer"} slot: ${gone ? "built" : `a ${rename(bt?.name || x.token)} to place`}`
       + `${x.income ? `; +${x.income} income when built` : ""}${gone ? "" : near ? "; can be built now" : `; out of reach: a leap costs ${state.config.techLeapCost} pearl`}`
-      + (plays ? `\n${x.name}${gone ? " (yours)" : ""}: ${x.text}` : "");
+      + (plays ? `\n${rename(x.name)}${gone ? " (yours)" : ""}: ${x.text}` : "");
   }
   const pad = size + 2;
   svg.setAttribute("viewBox", `${Math.min(...xs) - pad} ${Math.min(...ys) - pad} ${Math.max(...xs) - Math.min(...xs) + 2 * pad} ${Math.max(...ys) - Math.min(...ys) + 2 * pad}`);
@@ -301,11 +318,11 @@ export function renderTechBoard(state, pi, size = 15) {
     const g = el("g", {}, svg);
     el("circle", { cx, cy, r: size * 0.55, fill: "#f6d77a", stroke: "#7a5f2a", "stroke-width": 1.2 }, g);
     el("text", { x: cx, y: cy + size * 0.2, "text-anchor": "middle", "font-size": size * 0.55, class: "tech-name" }, g).textContent = "★";
-    el("title", {}, g).textContent = `${E.CAPSTONES[sector]?.name}: ${E.CAPSTONES[sector]?.text}`;
+    el("title", {}, g).textContent = `Mastery, ${rename(E.CAPSTONES[sector]?.name)}: ${E.CAPSTONES[sector]?.text}`;
   }
   svg.setAttribute("class", "tech-board");
   svg.setAttribute("style", `--pc:${p.colour}`);
   svg.setAttribute("role", "img");
-  svg.setAttribute("aria-label", `${p.name}'s technology board: ${state.tech.slots.length - taken.length} tokens left`);
+  svg.setAttribute("aria-label", `${p.name}'s lodge: ${state.tech.slots.length - taken.length} tokens left`);
   return svg;
 }

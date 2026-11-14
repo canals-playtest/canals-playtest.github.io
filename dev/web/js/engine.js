@@ -615,11 +615,11 @@ export const techLevel = (state) => (state.tech ? TECH_LEVEL[state.config.techBo
  * multipliers go in steps.
  */
 export const CAPSTONES = {
-  Channels: { name: "Navigator", text: "Highland and marsh hexes count 1 more in your Reach." },
-  Works: { name: "Architect", text: "4 VP of building score." },
-  Barges: { name: "Harbour master", text: "Counts as two more Buy cards." },
-  Market: { name: "Patron", text: "Counts as two more Build cards." },
-  Stores: { name: "Treasurer", text: "If you own two or more Earn cards, counts as two more cards of the colour that scores you most (not Dig)." },
+  Channels: { name: "Wayfinder", text: "Highland and marsh hexes count 1 more in your Reach." },
+  Works: { name: "Builder of halls", text: "4 VP of building score." },
+  Barges: { name: "Pilot", text: "Counts as two more Buy cards." },
+  Market: { name: "Elder", text: "Counts as two more Build cards." },
+  Stores: { name: "Hoard-keeper", text: "If you own two or more Earn cards, counts as two more cards of the colour that scores you most (not Dig)." },
   Pearls: { name: "Pearl diver", text: "Each pearl you hold at the end counts as 1 Reach, up to 4." },
 };
 
@@ -1495,7 +1495,7 @@ export function build(state, hk, typeId, slotId = undefined) {
     extras.push(`hand size ${p.handSize}`);
   }
   if (price.picks.length) extras.unshift(price.picks.map((x) => cubeNote(state, x)).join("; "));
-  if (state.config.materials && h.material) {
+  if (state.config.materials && h.material && state.config.hauling !== "tolls") {
     extras.push(bt.extracts ? `${bt.yield} ${h.material} on the hex` : `the ${TERRAIN_WORD[h.material]} is used up`);
   }
   t.actions.push({ type: "build", hex: hk, building: bt.id, cost, cubes: price.picks.length ? price.picks.map((x) => `${x.resource}:${x.from}`) : undefined });
