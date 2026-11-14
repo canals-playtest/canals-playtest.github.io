@@ -526,3 +526,18 @@ svg.board { touch-action: pan-y; }
 .game .board-wrap svg.board { max-height: calc(100vh - 9.5rem); }
 @media (max-width: 900px) { .game .board-wrap svg.board { max-height: none; } }
 .card .badge { top: 2.05rem; bottom: auto; right: .3rem; }
+.hover-info { position: absolute; z-index: 7; pointer-events: none; max-width: 230px; background: var(--panel); border: 2px solid var(--frame); border-radius: 8px;
+  padding: .35rem .55rem; font-size: .8rem; box-shadow: 0 4px 12px rgb(0 0 0 / .2); display: grid; gap: .1rem; }
+.hover-info[hidden] { display: none; }
+.dig-hint { animation: glow 1.6s ease-in-out infinite alternate; }
+@keyframes glow { from { opacity: .55; } to { opacity: 1; } }
+.hex.target { animation: glow-hex 1.6s ease-in-out infinite alternate; }
+@keyframes glow-hex { from { filter: brightness(1.04); } to { filter: brightness(1.16) saturate(1.15); } }
+@media (prefers-reduced-motion: reduce) { .dig-hint, .hex.target { animation: none; } }
+@media (max-width: 900px) { .game main { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) {
+  .game aside .me.collapsed { max-height: 3.4rem; overflow: hidden; }
+  .game aside .me > h2 { cursor: pointer; }
+  .game aside .me > h2::after { content: "▾"; color: var(--muted); font-size: .9rem; }
+  .game aside .me.collapsed > h2::after { content: "▴"; }
+}

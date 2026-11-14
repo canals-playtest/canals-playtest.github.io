@@ -143,6 +143,8 @@ export function renderBoard(svg, state, handlers) {
       poly.classList.add("target");
       const price = E.buildPrice(state, h.key, handlers.buildType, state.current, haul);
       title.push(`click to build for ${price.total}${price.picks.length ? ` (${price.picks.map((x) => E.cubeNote(state, x)).join("; ")})` : ""}`);
+      poly.dataset.info = [`Build a ${rename(state.buildingTypes.find((b) => b.id === handlers.buildType)?.name || "building")} in ${placeName(state, h.key)}: ${price.total} money`,
+        ...price.picks.map((x) => E.cubeNote(state, x)), h.isKey ? "a spring village: a friendship" : null].filter(Boolean).join("\n");
       poly.addEventListener("click", () => handlers.onBuild(h.key));
     }
     el("title", {}, poly).textContent = title.join("\n");
@@ -234,6 +236,7 @@ export function renderBoard(svg, state, handlers) {
       const remote = !E.extendsNetwork(state, e.key, link);
       el("line", { x1, y1, x2, y2, class: "dig-hint" + (remote ? " remote" : "") }, gEdge);
       const hit = el("line", { x1, y1, x2, y2, class: "dig-target" }, gEdge);
+      hit.dataset.info = `Dig a canal by ${placeName(state, e.a)}: ${cost} money${remote ? "\nAway from the water: cut off until someone links it" : ""}`;
       el("title", {}, hit).textContent = `dig here for ${cost}${remote ? " (away from the network: cut off until someone links it to the sea)" : ""}`;
       hit.addEventListener("click", () => handlers.onDig(e.key));
     }

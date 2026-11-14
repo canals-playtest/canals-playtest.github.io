@@ -177,7 +177,7 @@ const SETUP_VERSION = 13;
 const RESET_AT = { 2: ["connectionRequired"], 3: ["buildingTypes"], 4: ["inlandMilestone"], 5: ["milestoneReward"],
   6: ["rounds", "pearlEarning", "pearlCap", "vpPerReach"], 7: ["marketClock"], 8: ["ownHarbours"] };
 
-const END_REASON = { market: "the market decks ran out", keys: "every key tile reached the network",
+const END_REASON = { market: "the market ran dry", keys: "the waters reached the high springs",
   crossing: "ended by the first crossing", cap: "reached the round cap" };
 
 const SETUP_EXTRAS = { players: ["You", "Greedy AI"], seats: ["human", "greedy"], aiPace: "normal", map: "settled" };
@@ -871,6 +871,18 @@ function renderGame(newTurn = false) {
     buildType, interactive: acting,
   });
   const zoomCtl = attachZoom(boardSvg);
+  // The price of a dig or build beside the pointer, not in a slow browser tooltip.
+  const info = h("div", { class: "hover-info", hidden: true });
+  boardSvg.addEventListener("pointerover", (e) => {
+    const t = e.target.closest?.("[data-info]");
+    if (!t) { info.hidden = true; return; }
+    info.replaceChildren(...t.dataset.info.split("\n").map((l, i) => h(i ? "div" : "b", {}, l)));
+    const r = boardSvg.getBoundingClientRect(), b = t.getBoundingClientRect();
+    info.style.left = `${Math.min(r.width - 230, Math.max(4, b.right - r.left + 8))}px`;
+    info.style.top = `${Math.max(4, b.top - r.top - 8)}px`;
+    info.hidden = false;
+  });
+  boardSvg.addEventListener("pointerleave", () => { info.hidden = true; });
   if (net.role !== "local") document.title = acting ? "Your turn · Canals" : "Canals";
 
   // Hand
@@ -980,7 +992,7 @@ function renderGame(newTurn = false) {
       t.digAnywhere && t.pool.dig > 0 ? h("p", { class: "hint" }, `This land animal may also dig anywhere${t.digAnywhere === "any" ? "" : t.digAnywhere === "coastal" ? " on the coast" : " inland"}, away from the water; such a canal is cut off until someone links it.`) : null,
       h("div", { class: "row" },
         h("button", { class: "ghost", disabled: !(net.role === "guest" ? net.undoable : undo.length), onclick: () => act({ type: "undo" }) }, "Undo"),
-        h("button", { class: "primary", onclick: () => act({ type: "end" }) }, "End turn")));
+        endTurnButton(t.pool)));
   }
 
   // Discard pile (trash target)
@@ -1080,12 +1092,12 @@ function renderGame(newTurn = false) {
     promptBar(acting, p),
     h("main", {},
       h("div", { class: "left" },
-        h("div", { class: "board-wrap" }, boardSvg, zoomCtl),
+        h("div", { class: "board-wrap" }, boardSvg, zoomCtl, info),
         tab !== "market" ? h("section", { class: "market-strip" }, markets) : null),
       h("aside", {},
         netBanner(),
         h("section", { class: "me", style: `--pc:${(me || p).colour}` },
-          me ? h("h2", {}, crest(me, vi), me.name, h("span", { class: "ptotal" }, count(E.score(state, vi).total, `score-${vi}`), " pts"))
+          me ? h("h2", { onclick: (e) => { if (matchMedia("(max-width: 640px)").matches) e.currentTarget.parentElement.classList.toggle("collapsed"); } }, crest(me, vi), me.name, h("span", { class: "ptotal" }, count(E.score(state, vi).total, `score-${vi}`), " pts"))
             : h("h2", {}, "Watching", h("span", { class: "muted" }, net.role === "guest" ? " (every seat is taken)" : "")),
           mine?.stats, recap, hand, controls, discardPile, mine?.extra),
         tabs))));
@@ -1436,6 +1448,15 @@ function settingsMenu() {
         h("button", { class: "ghost small-btn", onclick: () => download(`canals-game-r${state.round}.json`, JSON.stringify(state)) }, "Save game"),
         net.role === "guest" ? null : h("button", { class: "ghost small-btn", onclick: async () => { const t = await pickFile(".json"); if (t) resume(JSON.parse(t)); } }, "Load game")),
       h("button", { class: "ghost small-btn", onclick: () => markConfusing() }, "This confused me…")));
+}
+
+/** End turn, asking once when actions would go unused. */
+function endTurnButton(pool) {
+  const left = ["dig", "build", "buy"].filter((k) => pool[k] > 0).map((k) => `${pool[k]} ${k}`);
+  if (!left.length) return h("button", { class: "primary", onclick: () => act({ type: "end" }) }, "End turn");
+  const b = confirmButton("End turn", `Leave ${left.join(", ")} unused? Click again`, () => act({ type: "end" }));
+  b.classList.remove("ghost"); b.classList.add("primary");
+  return b;
 }
 
 /** "Inland closed: 3 of 8 canals bordering inland hexes." */
@@ -1910,15 +1931,15 @@ function renderEnd() {
   const opener = most((i) => E.reach(state, i)), friend = most((i) => state.players[i].keys);
   const tale = [
     state.endReason === "keys" ? "The waters reached the high springs." : state.endReason === "market" ? "The market ran dry: no animal was left to hire." : "The season ended.",
-    `${state.players[opener].name} opened the most water (${E.reach(state, opener)} hexes)`,
-    state.players[friend].keys ? `, and ${state.players[friend].name} made the most friends among the springs (${state.players[friend].keys}).` : ".",
+    `${state.players[opener].name} opened the most water (${E.reach(state, opener)} hexes)` +
+    (state.players[friend].keys ? `, and ${state.players[friend].name} made the most friends among the springs (${state.players[friend].keys}).` : "."),
   ].join(" ");
   app.replaceChildren(h("div", { class: "setup end" },
     h("header", { class: "top" }, brand("Canals"),
       h("span", {}, `${state.round} rounds · ${END_REASON[state.endReason] || "full length"}`,
         state.finishedAt ? h("span", { class: "muted" }, ` · ${new Date(state.finishedAt).toLocaleString()}`) : null)),
     h("section", { class: "finale" },
-      h("div", { class: "winner" }, crest(win, rank[0].i, "big"), h("div", {}, `${win.name} wins with ${rank[0].total} points`)),
+      h("div", { class: "winner" }, crest(win, rank[0].i, "big"), h("div", {}, `${win.name} ${/^you$/i.test(win.name.trim()) ? "win" : "wins"} with ${rank[0].total} points`)),
       h("p", { class: "story" }, tale),
       h("div", { class: "podium" }, rank.map((r, k) => h("div", { class: k === 0 ? "first" : "" },
         scoreWheel(E.score(state, r.i), k === 0 ? 150 : 110, r.i), h("b", {}, `${k + 1}. ${r.name}`),
