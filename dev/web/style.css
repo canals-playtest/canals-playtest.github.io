@@ -541,3 +541,9 @@ svg.board { touch-action: pan-y; }
   .game aside .me > h2::after { content: "▾"; color: var(--muted); font-size: .9rem; }
   .game aside .me.collapsed > h2::after { content: "▴"; }
 }
+.canal-shine { stroke: rgb(255 255 255 / .55); stroke-width: 1; stroke-linecap: round; pointer-events: none; }
+.canal.draw .canal-shine { opacity: 0; animation: fade-in .3s .4s ease-out forwards; }
+.hex.water { animation: drift 7s ease-in-out infinite alternate; }
+.hex.water:nth-child(3n) { animation-delay: -2.3s; } .hex.water:nth-child(3n+1) { animation-delay: -4.6s; }
+@keyframes drift { from { filter: brightness(.98); } to { filter: brightness(1.06) saturate(1.05); } }
+@media (prefers-reduced-motion: reduce) { .hex.water { animation: none; } }

@@ -229,6 +229,7 @@ export function renderBoard(svg, state, handlers) {
       el("line", { x1, y1, x2, y2, class: "canal-ink", pathLength: 1 }, gc);
       el("line", { x1, y1, x2, y2, stroke: state.players[owner].colour, "stroke-dasharray": BANK_DASH[owner % BANK_DASH.length] || null, class: "canal-bank" + (crossingEdges.has(e.key) ? " crossing" : "") }, gc);
       const l = el("line", { x1, y1, x2, y2, class: "canal-water" + (stranded ? " stranded" : ""), pathLength: 1 }, gc);
+      if (!stranded) el("line", { x1: x1 + (x2 - x1) * 0.18, y1: y1 + (y2 - y1) * 0.18, x2: x2 - (x2 - x1) * 0.18, y2: y2 - (y2 - y1) * 0.18, class: "canal-shine" }, gc);
       el("title", {}, l).textContent = `${state.players[owner].name}'s canal${stranded ? " (not yet linked to the sea)" : ""}`;
     } else if (canDigAny && E.canDig(state, e.key).ok) {
       const cost = E.digCost(state, e.key);

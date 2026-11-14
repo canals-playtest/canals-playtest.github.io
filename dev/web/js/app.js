@@ -170,12 +170,13 @@ function setData(d) {
 
 // Bumped when a default changes, so a setup saved in this browser earlier
 // picks up the new value instead of silently keeping the old one.
-const SETUP_VERSION = 13;
+const SETUP_VERSION = 14;
 // The connection rule became settled (2); building types became the working rule (3);
 // the inland milestone replaced the first-opened-hex unlock (4); the game ends by
 // trigger, with rounds a cap, and the pearl track came in (6).
 const RESET_AT = { 2: ["connectionRequired"], 3: ["buildingTypes"], 4: ["inlandMilestone"], 5: ["milestoneReward"],
-  6: ["rounds", "pearlEarning", "pearlCap", "vpPerReach"], 7: ["marketClock"], 8: ["ownHarbours"] };
+  6: ["rounds", "pearlEarning", "pearlCap", "vpPerReach"], 7: ["marketClock"], 8: ["ownHarbours"],
+  14: ["vpPerBuilding", "villageSlots", "keysPerHighland", "firstActPrizes"] };
 
 const END_REASON = { market: "the market ran dry", keys: "the waters reached the high springs",
   crossing: "ended by the first crossing", cap: "reached the round cap" };
@@ -371,7 +372,11 @@ function renderSetup() {
         num("Income per building", "incomePerBuilding", { min: 0 }),
         num("Market display", "displaySize", { min: 1 }),
         num("VP per building", "vpPerBuilding", { min: 0 }),
-        num("VP per key", "vpPerKey", { min: 0 }),
+        num("VP per friendship (key)", "vpPerKey", { min: 0 }),
+        num("Players per spring village (0: one)", "villageSlots", { min: 0 }),
+        num("Friendships for a highland village", "keysPerHighland", { min: 1 }),
+        h("label", { class: "field", title: "id:code, comma-separated: builds3, marsh, wharf, reach5. Blank: none." }, h("span", {}, "First-act prizes"),
+          h("input", { value: setup.firstActPrizes || "", onchange: (e) => { setup.firstActPrizes = e.target.value; saveSetup(); } })),
         num("VP per Reach hex", "vpPerReach", { min: 0 }),
         num("Multiplier cap (0 = none)", "multiplierCap", { min: 0 }),
         check("Build only on the canal network", "buildNeedsNetwork"),
