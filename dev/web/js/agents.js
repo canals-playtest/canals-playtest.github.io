@@ -89,7 +89,7 @@ function hexWorth(s, hk, counts) {
   if (h.bonus && s.claimed[hk] === undefined) w += 4;
   if (h.slots > (s.buildings[hk] || []).length && s.board.terrain[h.terrain].buildable) {
     w += 0.4 * (Math.max(0.5, counts.dig) * cfg.vpPerBuilding + cfg.incomePerBuilding);
-    if (h.isKey) w += Math.max(0.5, counts.special) * cfg.vpPerKey * 0.6;
+    if (h.isKey) w += Math.max(0.5, counts.special) * cfg.vpPerKey * 0.6 * E.villageKeys(s, hk);
   }
   if (cfg.networkScore === "crossings" && s.hubs.includes(hk) && !s.crossings.some((c) => c.hub === hk)) w += GREEDY_TUNING.hubWorth;
   return w;
@@ -197,7 +197,7 @@ function greedyActions(s) {
         for (const bt of s.buildingTypes) {
           if (!E.canBuild(s, hk, bt.id).ok) continue;
           const vp = E.buildingVP(s, hk, { p: s.current, type: bt.id });
-          const sc = (h.isKey ? Math.max(0.5, counts.special) * s.config.vpPerKey : 0) + 1.2 * vp * Math.max(0.5, counts.dig)
+          const sc = (h.isKey && !(s.buildings[hk] || []).some((x) => x.p === s.current) ? Math.max(0.5, counts.special) * s.config.vpPerKey * E.villageKeys(s, hk) : 0) + 1.2 * vp * Math.max(0.5, counts.dig)
             + 0.4 * (E.techOn(s) ? E.buildIncome(s, bt.id, E.pickSlot(s, s.current, bt.id)?.id) : s.config.incomePerBuilding + bt.income) * Math.min(left, 8)
             - (E.techOn(s) && E.pickSlot(s, s.current, bt.id)?.leap ? 1.5 : 0)
             + 0.8 * bt.moneyPerCanal * E.canalsAround(s, hk) - 0.8 * E.buildCost(s, hk, bt.id)

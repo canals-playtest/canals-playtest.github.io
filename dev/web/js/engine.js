@@ -379,6 +379,11 @@ export function createGame(data, config = {}) {
       .map((h) => h.key).sort();
     shuffle(state, pool).slice(0, cfg.autoKeyTiles).forEach((k) => (state.board.hexes[k].isKey = true));
   }
+  // Villages (key tiles) take villageSlots buildings, one a player (keys as a lane, state-of-play 3.2).
+  if (cfg.villageSlots > 0) {
+    for (const h of Object.values(state.board.hexes)) if (h.isKey && state.board.terrain[h.terrain].buildable) h.slots = cfg.villageSlots;
+  }
+  state.prizes = {};   // first-act prize id -> player index
 
   const startingDeck = cfg.startingDeck ||
     Object.fromEntries(Object.values(defs).filter((d) => d.deck === "starting").map((d) => [d.id, 1]));
@@ -521,7 +526,7 @@ function log(state, msg) { if (!state.quiet) state.log.push({ round: state.round
 export function cloneState(state, rng) {
   const c = { ...state, quiet: true, log: [], history: [] };
   const deep = structuredClone({ dug: state.dug, buildings: state.buildings, claimed: state.claimed, cubes: state.cubes,
-    supply: state.supply, crossings: state.crossings, tokenClaimed: state.tokenClaimed, capstones: state.capstones || {}, players: state.players, market: state.market, trash: state.trash, turn: state.turn });
+    supply: state.supply, crossings: state.crossings, tokenClaimed: state.tokenClaimed, capstones: state.capstones || {}, prizes: state.prizes || {}, players: state.players, market: state.market, trash: state.trash, turn: state.turn });
   Object.assign(c, deep);
   if (rng !== undefined) c.rng = (rng >>> 0) || 1;
   return c;
@@ -1066,6 +1071,7 @@ export function dig(state, ek) {
     for (const x of parseEffects(h.bonus)) fx[x.kind] = (fx[x.kind] || 0) + x.n;
     applyEffects(state, p, fx);
   }
+  checkPrizes(state);
   checkInland(state);
   checkTides(state);
   if (state.config.networkScore === "crossings" || state.config.endOnCrossing) checkCrossings(state);
@@ -1411,6 +1417,7 @@ export function canBuild(state, hk, typeId, haul = undefined, slotId = undefined
   const storey = state.tech && here.length === h.slots && h.slots > 0 && here.some((b) => b.p === state.current)
     && here.filter((b) => b.p === state.current).length < 2 && hasTech(state, state.current, "storey");
   if (here.length >= h.slots && !storey) return fail("no free slot");
+  if (h.isKey && state.config.villageSlots > 0 && here.some((b) => b.p === state.current)) return fail("you already have a building in this village");
   if (inlandClosed(state) && isInland(state, hk)) return fail("inland: closed until the inland milestone");
   if (state.config.buildNeedsNetwork && !networkHexes(state).has(hk)) return fail("must be on the canal network");
   if (state.config.buildNeedsOwnCanal && !ownCanalAt(state, hk, state.current)) return fail("you may build only where one of your own linked canals runs");
@@ -1470,7 +1477,10 @@ export function build(state, hk, typeId, slotId = undefined) {
     if (slot.leap) { p.pearls -= state.config.techLeapCost; p.stats.pearlsSpent = (p.stats.pearlsSpent || 0) + state.config.techLeapCost; }
     extras.push(`from slot ${slot.id} (${techSlot(state, slot.id).sector})${slot.leap ? `, a leap for ${state.config.techLeapCost} pearl` : ""}`);
   }
-  if (h.isKey && (state.buildings[hk] || []).filter((b) => b.p === state.current).length === 1) { p.keys++; extras.push("key tile: +1 key"); }
+  if (h.isKey && (state.buildings[hk] || []).filter((b) => b.p === state.current).length === 1) {
+    const n = villageKeys(state, hk);
+    p.keys += n; extras.push(`key tile: +${n} key${n > 1 ? "s" : ""}`);
+  }
   const tok = state.tokens?.[hk];
   if (tok && state.tokenClaimed?.[hk] === undefined) {
     (state.tokenClaimed ||= {})[hk] = state.current;
@@ -1490,7 +1500,41 @@ export function build(state, hk, typeId, slotId = undefined) {
   }
   t.actions.push({ type: "build", hex: hk, building: bt.id, cost, cubes: price.picks.length ? price.picks.map((x) => `${x.resource}:${x.from}`) : undefined });
   log(state, `${p.name} builds ${state.buildingTypes.length > 1 ? `a ${bt.name} ` : ""}on ${hk} for ${cost} (${extras.join(", ")}).`);
+  checkPrizes(state);
   return OK;
+}
+
+/**
+ * First-act prizes (state-of-play 3.2), rule firstActPrizes "id:code,...":
+ * public "first to" goals that only the first act can win; the first player
+ * to reach one takes its code. builds3: three buildings; marsh: a canal on a
+ * marsh's border; wharf: a Wharf; harbours2: canals at two harbours' mouths.
+ */
+export const PRIZES = {
+  builds3: { name: "First to three buildings", met: (s, pi) => Object.values(s.buildings).flat().filter((b) => b.p === pi).length >= 3 },
+  marsh: { name: "First canal beside a marsh", met: (s, pi) => Object.keys(s.dug).some((ek) => s.dug[ek] === pi && [s.board.edges[ek].a, s.board.edges[ek].b].some((hk) => s.board.hexes[hk]?.feature === "marsh")) },
+  wharf: { name: "First Wharf", met: (s, pi) => Object.values(s.buildings).flat().some((b) => b.p === pi && b.type === "wharf") },
+  reach5: { name: "First to open five hexes", met: (s, pi) => reach(s, pi) >= 5 },
+};
+export function prizeList(state) {
+  return String(state.config.firstActPrizes || "").split(",").map((x) => x.trim()).filter(Boolean)
+    .map((x) => { const [id, code] = x.split(":"); return { id: id.trim(), code: (code || "").trim(), ...(PRIZES[id.trim()] || {}) }; })
+    .filter((x) => x.met);
+}
+/** Keys a player takes for a first building in this village (0 if not a village). */
+export const villageKeys = (state, hk) => { const h = state.board.hexes[hk]; return !h?.isKey ? 0 : h.band === "highland" ? state.config.keysPerHighland ?? 1 : 1; };
+export const prizesOpen = (state) => (state.config.tides && state.config.inlandMilestone !== "none" ? (state.tide || 1) < 2 : !state.inlandOpen);
+export function checkPrizes(state) {
+  if (!state.config.firstActPrizes || !state.turn || !prizesOpen(state)) return;
+  const pi = state.current, p = state.players[pi];
+  for (const x of prizeList(state)) {
+    if ((state.prizes ||= {})[x.id] !== undefined || !x.met(state, pi)) continue;
+    state.prizes[x.id] = pi;
+    const fx = {};
+    for (const e of parseEffects(x.code)) fx[e.kind] = (fx[e.kind] || 0) + e.n;
+    applyEffects(state, p, fx);
+    log(state, `${p.name} wins the prize "${x.name}": ${x.code}.`);
+  }
 }
 
 export const TERRAIN_WORD = { clay: "clay bed", wood: "forest", stone: "mountain" };

@@ -106,12 +106,24 @@
       "note": "How much each card counts toward its colour's multiplier, by deck (coastal-2 counts as coastal): starting cards don't count, so trashing them costs no points. Was 1 for every card up to playtest-v1. docs/scoring.md"
     },
     "vpPerBuilding": {
-      "value": 3, "status": "assumed",
-      "note": "Building score per building. Calibration table in docs/scoring.md"
+      "value": 2, "status": "assumed",
+      "note": "Building score per building. 3 to 2 on 2026-11-14: at 3 the market ended 9 games of 32 and lean-buildings won 59% at leaning tables; at 2, endings 17/15 at 40.2 rounds and the four leaning plans 18-29% (results/playtest/endings-*, docs/state-of-play.md). Calibration table in docs/scoring.md"
     },
     "vpPerKey": {
       "value": 6, "status": "assumed",
       "note": "Key score per key token. Raised from 4 after simulation; docs/simulation.md"
+    },
+    "villageSlots": {
+      "value": 2, "status": "assumed",
+      "note": "Keys as a lane (state-of-play 3.2): a village (key tile) takes this many buildings, one a player, and each builder takes its keys. 0: the hex's own slots, so a village's key goes to one player."
+    },
+    "keysPerHighland": {
+      "value": 2, "status": "assumed",
+      "note": "Keys for building in a highland village (an inland village gives 1). Was 1."
+    },
+    "firstActPrizes": {
+      "value": "builds3:+1P,marsh:+1P,wharf:+1P,reach5:+1P", "status": "assumed",
+      "note": "Public 'first to' prizes only the first act (before the second tide) can win, as id:code; the first player to meet one takes its code. builds3: three buildings; marsh: a canal beside a marsh; wharf: a Wharf; reach5: five hexes opened. Blank: none. state-of-play 3.2"
     },
     "vpPerReach": {
       "value": 1, "status": "assumed",

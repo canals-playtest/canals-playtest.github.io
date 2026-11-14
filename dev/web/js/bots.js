@@ -319,7 +319,7 @@ export class SearchBot {
       if (open(hk)) w += 4 * sl.discovery;
       if (h.slots > 0) {
         w += 0.4 * (Math.max(0.5, counts.dig) * cfg.vpPerBuilding + cfg.incomePerBuilding) * (0.5 + sl.build);
-        if (h.isKey) w += Math.max(0.5, counts.special) * cfg.vpPerKey * 0.6;
+        if (h.isKey) w += Math.max(0.5, counts.special) * cfg.vpPerKey * 0.6 * E.villageKeys(st, hk);
       }
       if (w >= 3) { worth[hk] = w; any = true; }
     }
@@ -363,7 +363,7 @@ export class SearchBot {
       if (h.slots <= 0 || geo.water(hk)) continue;
       if ((st.buildings[hk] || []).length >= h.slots && !E.hasTech(st, pi, "storey")) continue;
       let baseV = 2 + (E.techOn(st) ? 0 : INCOME_VP * cfg.incomePerBuilding);
-      if (h.isKey) baseV += 3 * (0.5 + sl.special);
+      if (h.isKey && !(st.buildings[hk] || []).some((x) => x.p === pi)) baseV += 3 * (0.5 + sl.special) * E.villageKeys(st, hk);
       for (const bt of st.buildingTypes) {
         if (!E.canBuild(st, hk, bt.id, haul).ok) continue;   // includes the money
         const cost = E.buildPrice(st, hk, bt.id, pi, haul).total;
