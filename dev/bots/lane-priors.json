@@ -2,15 +2,15 @@
  "_about": "Lane priors for the bots: the mean number of cards of each scoring colour (weighted by deck, rule cardWeights) a bot holds in its final deck. python: learned by `python3 -m sim.priors`, by preset (\"*\" = all). browser: learned by `node tools/learn_priors.mjs` for the browser greedy bot, then updated in each player's browser after every finished game. See docs/simulation.md.",
  "browser": {
   "greedy": {
-   "dig": 5.31,
-   "build": 3.72,
-   "buy": 2.31,
-   "special": 5.69,
-   "games": 90
+   "dig": 4.02,
+   "build": 3.75,
+   "buy": 2.85,
+   "special": 8.58,
+   "games": 180
   }
  },
- "browser_built_for": "c247ef9e9f",
- "browser_learned": "pass 2 of 2, 30 games at 2,3,4 players",
+ "browser_built_for": "8e99d59176",
+ "browser_learned": "pass 3 of 3, 60 games at 2,3,4 players",
  "python": {
   "*": {
    "Dig": 3.5,
@@ -73,62 +73,62 @@
  "python_learned": "pass 1 of 2, 36 games at 3,4 players, seed 1 (the second pass was cut short)",
  "search": {
   "*": {
-   "dig": 4.33,
-   "build": 2.23,
-   "buy": 2.1,
-   "special": 4.97,
+   "dig": 2.6,
+   "build": 1.6,
+   "buy": 1.9,
+   "special": 5.68,
    "games": 126
   },
   "balanced": {
-   "dig": 3.39,
-   "build": 2.28,
-   "buy": 2.67,
-   "special": 4.83,
+   "dig": 2.44,
+   "build": 1.67,
+   "buy": 1.61,
+   "special": 5.33,
    "games": 18
   },
   "builder": {
-   "dig": 0.62,
-   "build": 4.76,
-   "buy": 0.14,
-   "special": 7.19,
+   "dig": 0.57,
+   "build": 3.86,
+   "buy": 0.48,
+   "special": 6.9,
    "games": 21
   },
   "digger": {
-   "dig": 7,
-   "build": 0.64,
-   "buy": 0.21,
-   "special": 3.14,
+   "dig": 4.36,
+   "build": 0.5,
+   "buy": 0.86,
+   "special": 4.79,
    "games": 14
   },
   "merchant": {
-   "dig": 1.35,
-   "build": 0.65,
-   "buy": 8.05,
-   "special": 2.65,
+   "dig": 0.8,
+   "build": 1.4,
+   "buy": 5.9,
+   "special": 7.6,
    "games": 20
   },
   "miser": {
-   "dig": 2.64,
-   "build": 4.07,
-   "buy": 0.29,
-   "special": 9.93,
+   "dig": 2.07,
+   "build": 1.57,
+   "buy": 1.07,
+   "special": 5.21,
    "games": 14
   },
   "prospector": {
-   "dig": 7.94,
-   "build": 0.28,
-   "buy": 1.22,
-   "special": 3.83,
+   "dig": 4.5,
+   "build": 0.22,
+   "buy": 1.67,
+   "special": 4.78,
    "games": 18
   },
   "rusher": {
-   "dig": 7.9,
-   "build": 2.67,
-   "buy": 1.1,
-   "special": 3.95,
+   "dig": 4,
+   "build": 1.43,
+   "buy": 1.19,
+   "special": 4.62,
    "games": 21
   }
  },
- "search_built_for": "c247ef9e9f",
+ "search_built_for": "8e99d59176",
  "search_learned": "pass 2 of 2, 36 games at 3,4 players"
 }
