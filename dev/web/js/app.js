@@ -176,7 +176,7 @@ const SETUP_VERSION = 14;
 // trigger, with rounds a cap, and the pearl track came in (6).
 const RESET_AT = { 2: ["connectionRequired"], 3: ["buildingTypes"], 4: ["inlandMilestone"], 5: ["milestoneReward"],
   6: ["rounds", "pearlEarning", "pearlCap", "vpPerReach"], 7: ["marketClock"], 8: ["ownHarbours"],
-  14: ["vpPerBuilding", "villageSlots", "keysPerHighland", "firstActPrizes"] };
+  14: ["vpPerBuilding", "villageSlots", "keysPerHighland", "firstActPrizes", "endKeysShare", "vpPerKey"] };
 
 const END_REASON = { market: "the market ran dry", keys: "the waters reached the high springs",
   crossing: "ended by the first crossing", cap: "reached the round cap" };
