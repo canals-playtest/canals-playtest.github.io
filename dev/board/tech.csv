@@ -1,0 +1,19 @@
+id,sector,ring,token,income,tech,name,text,notes
+I0,Channels,inner,burrow,1,dredging,Dredging,"Your first dig each turn costs 1 less, never below 1.",growth (Sluice until 2026-11-13: the second tide now lifts the starters' limit for everyone)
+I1,Works,inner,camp,1,scaffolding,Scaffolding,Every site costs you 1 less (never below 1).,growth
+I2,Barges,inner,wharf,1,barge,Barge,Pay one toll fewer on each build.,growth
+I3,Market,inner,burrow,1,reserve,Reserve,"For 1 pearl, set a display card aside: only you may buy it, and the display refills.",pearl use
+I4,Stores,inner,burrow,1,granary,Granary,1 more income (2 under this slot).,growth
+I5,Pearls,inner,burrow,1,diving,Diving,Your pearl threshold is 1 lower and you may hold 2 more pearls.,growth
+C0,Channels,corner,wharf,0,relay,Relay,"Board boost: with any Dig card, discard a Dig card for one more dig.",board boost
+E0,Channels,edge,quarry,0,tunnelling,Tunnelling,You may dig a border between two crags; hills cost you nothing extra; your starting cards may dig in the highland.,permission
+C1,Works,corner,burrow,0,yard,Yard,"Board boost: with any Build card, discard a Build card for one more build.",board boost
+E1,Works,edge,inn,0,storey,Second storey,You may build a second building on a hex where you have one.,permission
+C2,Barges,corner,lock,0,tollhouse,Toll house,"When a haul pays you, take 1 more from the bank, once per build.",growth
+E2,Barges,edge,camp,0,stoneboats,Stone boats,Stone pays no toll to the bank.,growth
+C3,Market,corner,inn,0,barter,Barter,"Board boost: with any Buy card, discard an Earn card for 2 off.",board boost
+E3,Market,edge,mill,0,guild,Guild,Tier-2 cards cost you 2 less.,growth
+C4,Stores,corner,mill,0,larder,Larder,"Board boost: with any Earn card, 2 money per card discarded.",board boost
+E4,Stores,edge,quarry,0,survey,Survey,"+1 hand size, up to the cap.",growth
+C5,Pearls,corner,wharf,0,lustre,Lustre,"A pearl is worth 3 money, or 2 off one dig, build or card.",pearl use
+E5,Pearls,edge,lock,0,secondwind,Second wind,3 pearls to play a second card this turn.,pearl use
