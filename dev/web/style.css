@@ -562,3 +562,4 @@ svg.board { touch-action: pan-y; }
 .slot-chips { display: flex; flex-wrap: wrap; gap: .2rem; }
 .slot-chip { font-size: .74rem; padding: .1rem .4rem; border-radius: 999px; }
 .slot-chip.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); font-weight: 700; }
+.door .level { margin: 0 0 .6rem; gap: .5rem; }

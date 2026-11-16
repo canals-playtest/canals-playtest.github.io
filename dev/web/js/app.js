@@ -5,6 +5,7 @@ import * as E from "./engine.js";
 import { cardDef, ROLES, displayName, legalDiscardCount, resolveEffects } from "./notation.js";
 import { renderBoard, renderTechBoard } from "./board.js";
 import { AGENTS, makeRng, setLanePrior, LANE_ROLES } from "./agents.js";
+import { makePlanner, setValueFit } from "./planner.js";
 import { installSprites, icon, crest, ROLE_ICON, hasSymbol } from "./sprites.js";
 import { showRules } from "./rules.js";
 import { applyCommand } from "./commands.js";
@@ -78,9 +79,10 @@ const SEATS = {
   human: "Human, this device",
   remote: "Online player",
   greedy: "Computer (greedy)",
+  planner: "Computer (planner: stronger, slower)",
   random: "Computer (random)",
 };
-const SEAT_HINT = "An online player joins from their own device with the table's invite link. Greedy looks one turn ahead and steers its digs toward Reach, discoveries and building sites. Random plays any legal move: a floor, not an opponent.";
+const SEAT_HINT = "An online player joins from their own device with the table's invite link. Greedy looks one turn ahead and steers its digs toward Reach, discoveries and building sites. The planner plays each promising card and target forward a few rounds in many shuffled futures, and picks the best (a second or two a turn). Random plays any legal move: a floor, not an opponent.";
 // Delay before each computer turn, so you can watch the board change.
 const PACES = { fast: ["Fast", 150], normal: ["Normal", 800], slow: ["Slow", 1800] };
 
@@ -449,7 +451,8 @@ function renderHome() {
   if (saved && saved.version !== E.STATE_VERSION) { store.del("canals.game"); saved = null; }
   const finished = finishedGames();
   const vsComputer = (n) => {
-    setup = frontSetup(["You", ...Array.from({ length: n }, (_, i) => AI_NAMES[i])], ["human", ...Array(n).fill("greedy")]);
+    const level = store.get("canals.level") === "planner" ? "planner" : "greedy";
+    setup = frontSetup(["You", ...Array.from({ length: n }, (_, i) => AI_NAMES[i])], ["human", ...Array(n).fill(level)]);
     startGame();
   };
   const hotSeat = (n) => {
@@ -469,6 +472,10 @@ function renderHome() {
         h("button", { class: "primary", onclick: () => { setup = defaultSetup(store.get("canals.setup")); resume(saved); } }, "Resume the game")) : null,
       h("section", { class: "door" }, h("h2", {}, "Play against the computer"),
         h("p", { class: "muted" }, "You and computer players at this screen. About 45 minutes."),
+        h("label", { class: "row level" }, h("span", { class: "muted" }, "Opponents"),
+          h("select", { onchange: (e) => store.set("canals.level", e.target.value) },
+            h("option", { value: "greedy", selected: store.get("canals.level") !== "planner" || null }, "Gentle (quick)"),
+            h("option", { value: "planner", selected: store.get("canals.level") === "planner" || null }, "Strong (they think a second or two)"))),
         h("div", { class: "row wrap" }, [1, 2, 3].map((n) => h("button", { class: n === 2 ? "primary" : "", onclick: () => vsComputer(n) }, `${n + 1} players`)))),
       h("section", { class: "door" }, h("h2", {}, "Play with friends"),
         h("p", { class: "muted" }, "Pass this device around, or invite friends to join from their own."),
@@ -589,7 +596,7 @@ function playersBlock() {
         const n = setup.players.length + 1;
         setup.players.push(`AI ${n}`); setup.seats.push("greedy"); seatsChanged();
       } }, "+ player") : null),
-    setup.seats.some((x) => x === "greedy" || x === "random") ? h("div", { class: "row wrap" },
+    setup.seats.some((x) => x === "greedy" || x === "random" || x === "planner") ? h("div", { class: "row wrap" },
       h("label", { class: "row" }, h("span", { class: "muted" }, "Computer turn speed"),
         h("select", { onchange: (e) => { setup.aiPace = e.target.value; saveSetup(); } },
           Object.entries(PACES).map(([v, [l]]) => h("option", { value: v, selected: setup.aiPace === v || null }, l)))),
@@ -801,11 +808,17 @@ function scheduleAi() {
   aiTimer = setTimeout(aiTurn, (PACES[setup?.aiPace] || PACES.normal)[1] + playbackMs);
 }
 
+/** The planner seat (web/js/planner.js) on a small budget, so a turn takes a second or two in the browser. */
+function plannerTurn(st, rnd) {
+  const bot = makePlanner("planner", Math.floor(rnd() * 1e9), [6, 4], { budget: 36 });
+  return bot.playTurn(st);
+}
+
 function aiTurn() {
   aiTimer = null;
   const p = E.currentPlayer(state);
   if (!p?.ai || state.over) return;
-  const turn = AGENTS[p.ai] || AGENTS.greedy;
+  const turn = p.ai === "planner" ? plannerTurn : AGENTS[p.ai] || AGENTS.greedy;
   const before = JSON.stringify(state);
   try {
     // Seeded from the game, so a resumed game makes the same computer choices.
@@ -1910,7 +1923,7 @@ function leaveTable(show = true) {
 /** A guest's view before the game starts: who is at the table. */
 function renderGuestLobby() {
   const seats = net.lobby?.seats || [];
-  const TYPE = { human: "at the host's device", remote: "online", greedy: "computer", random: "computer (random)" };
+  const TYPE = { human: "at the host's device", remote: "online", greedy: "computer", planner: "computer (planner)", random: "computer (random)" };
   app.replaceChildren(h("div", { class: "setup lobby" },
     h("header", { class: "top" }, brand("Canals"), h("div", { class: "row wrap" }, rulesButton(),
       confirmButton("Leave", "Leave? Click again", leaveTable))),
@@ -2092,6 +2105,7 @@ function learnLanes(g) {
 (async function main() {
   installSprites();
   loadLanePriors();
+  fetch(repo("bots/value-fit.json")).then((r) => (r.ok ? r.json() : null)).then((f) => f && setValueFit(f)).catch(() => {});
   try {
     setData(await loadRepoData());
     const joining = location.hash.match(/^#join=([A-Za-z0-9]+)/);

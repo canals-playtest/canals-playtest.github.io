@@ -333,7 +333,9 @@ export class SearchBot {
 
   // ---- targets ---------------------------------------------------------- //
 
-  pickDig(st) {
+  /** The border to dig; with k, the k best, best first (for the target search). */
+  pickDig(st, k = 0) {
+    const ranked = [];
     const b = st.board, cfg = st.config, pi = st.current, sl = this.s, geo = geometry(b);
     const counts = this.expectedCounts(st, pi);
     const link = E.linkedNetwork(st), net = E.networkHexes(st, link), mine = touched(st, pi, link);
@@ -393,12 +395,16 @@ export class SearchBot {
       }
       v -= cost * (0.4 + sl.hoard);
       v += this.rng() * 0.4;
+      if (k) ranked.push([ek, v]);
       if (v > bestV) { best = ek; bestV = v; }
     }
+    if (k) return ranked.filter(([, v]) => v > -4).sort((a, c) => c[1] - a[1]).slice(0, k).map(([x]) => x);
     return bestV > -4 ? best : null;
   }
 
-  pickBuild(st) {
+  /** [hex, type] to build; with k, the k best pairs, best first. */
+  pickBuild(st, k = 0) {
+    const ranked = [];
     const b = st.board, cfg = st.config, pi = st.current, sl = this.s, p = E.currentPlayer(st);
     const left = Math.max(0, Math.min(1, E.roundsLeft(st) / 12));
     const haul = cfg.materials ? E.hauls(st) : undefined;
@@ -430,9 +436,11 @@ export class SearchBot {
         if (bt.port && cfg.materials) v += (0.5 + 0.5 * left) * Math.min(4, Math.max(0, (geo.depth[hk] ?? 2) - 2));
         v -= cost * (0.4 + sl.hoard);
         v += this.rng() * 0.4;
+        if (k) ranked.push([[hk, bt.id], v]);
         if (v > bestV) { best = [hk, bt.id]; bestV = v; }
       }
     }
+    if (k) return ranked.sort((a, c) => c[1] - a[1]).slice(0, k).map(([x]) => x);
     return best;
   }
 
@@ -515,6 +523,10 @@ export class SearchBot {
   actions(st, first) {
     this.spendPearls(st);
     const pool = st.turn.pool;
+    // A target chosen by the search (PlannerBot) goes first; the rest by the formulas.
+    const forced = this.forced; this.forced = null;
+    if (forced?.dig && pool.dig > 0) E.dig(st, forced.dig);
+    if (forced?.build && pool.build > 0) E.build(st, ...forced.build);
     for (let guard = 0; guard < 30 && pool.dig > 0; guard++) { const ek = this.pickDig(st); if (!ek || !E.dig(st, ek).ok) break; }
     for (let guard = 0; guard < 30 && pool.build > 0; guard++) { const x = this.pickBuild(st); if (!x || !E.build(st, ...x).ok) break; }
     for (let guard = 0; guard < 30 && pool.dig > 0; guard++) { const ek = this.pickDig(st); if (!ek || !E.dig(st, ek).ok) break; }   // a Burrow's free dig
