@@ -201,7 +201,7 @@ function greedyActions(s) {
             + 0.4 * (E.techOn(s) ? E.buildIncome(s, bt.id, E.pickSlot(s, s.current, bt.id)?.id) : s.config.incomePerBuilding + bt.income) * Math.min(left, 8)
             - (E.techOn(s) && E.pickSlot(s, s.current, bt.id)?.leap ? 1.5 : 0)
             + 0.8 * bt.moneyPerCanal * E.canalsAround(s, hk) - 0.8 * E.buildCost(s, hk, bt.id)
-            + typeExtras(s, hk, bt, left) + tokenValue(s, hk, Math.min(1, left / 12));
+            + typeExtras(s, hk, bt, left) + tokenValue(s, hk, Math.min(1, left / 12)) + 1.5 * (bt.freeDig || 0);
           if (sc > bestScore) { bestScore = sc; best = [hk, bt.id]; }
         }
       }

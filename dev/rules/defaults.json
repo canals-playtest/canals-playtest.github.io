@@ -81,6 +81,38 @@
       "value": "edge", "status": "assumed",
       "note": "\"edge\": a toll for every canal of someone else's on the route (the designer's rule); \"owner\": one toll per other player whose canals the route uses, however many (quicker to count at the table; brainstorm-stage-2-3.md 8.1)"
     },
+    "tollsPerBuild": {
+      "value": true, "status": "assumed",
+      "note": "One barge a build: however many loads a build needs, each canal owner's tolls are paid once (the first load's), not again for the second. From playtest-v2; reactive-play.md 9.3"
+    },
+    "importPrice": {
+      "value": 5, "status": "assumed",
+      "note": "Wood or stone from over the sea: always to be had at any shore hex for this much (plus the haul). 0: none. From playtest-v2; reactive-play.md 8.3, 9.4"
+    },
+    "wearFree": {
+      "value": 3, "status": "assumed",
+      "note": "Sources wear: the first this many loads from a source cost the plain price (extractionFee to its owner; free from your own), then each load wearStep more than the last (2, 3, 4...), paid to the owner (to the bank from your own). 0: use wearEvery instead. From playtest-v2; reactive-play.md 10 (run H), 11.4"
+    },
+    "wearStep": {
+      "value": 1, "status": "assumed",
+      "note": "What each worn load adds to a source's price (see wearFree). 0: sources never wear"
+    },
+    "wearEvery": {
+      "value": 1, "status": "alternative",
+      "note": "With wearFree 0: the price rises by wearStep for every this many loads taken (run A of reactive-play.md 9.1 rose every second load and halved the late buildings)"
+    },
+    "sourceLoads": {
+      "value": 0, "status": "alternative",
+      "note": "A source is worked out after this many loads (the building stays and scores). 0: never. Run G of reactive-play.md 9 used 5"
+    },
+    "sourceFirst": {
+      "value": true, "status": "assumed",
+      "note": "A camp or quarry must be the first building on its hex: one built as a second building there supplied nothing. From playtest-v2; reactive-play.md 11.1"
+    },
+    "renownPerLoad": {
+      "value": 0, "status": "alternative",
+      "note": "Points to a source's owner for each load sold to another family (runs E to H of reactive-play.md); the designer dropped it (11). 0: none"
+    },
     "harbourDraft": {
       "value": true, "status": "assumed",
       "note": "Under ownHarbours: before the first turn, players choose their harbours in reverse seat order (the last seat first), instead of being assigned them. brainstorm-stage-3.md 6.5"

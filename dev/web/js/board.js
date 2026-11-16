@@ -124,7 +124,7 @@ export function renderBoard(svg, state, handlers) {
     if (mats && tolls && h.material && h.material !== "clay") {
       const owner = E.extractorOwner(state, h.key), built = (state.buildings[h.key] || []).length > 0;
       title.push(owner !== undefined
-        ? `${state.players[owner].name}'s ${CAMP[h.material]}: ${h.material} for anyone, never running out, ${state.config.extractionFee} each to its owner (free to them)`
+        ? `${state.players[owner].name}'s ${CAMP[h.material]}: ${h.material} for anyone, never running out, ${state.config.extractionFee + (E.wearAt ? E.wearAt(state, state.wear?.[h.key] || 0) : 0)} the next load to its owner${state.config.wearStep > 0 ? ` (${state.wear?.[h.key] || 0} loads taken; the first ${state.config.wearFree} at ${state.config.extractionFee}, then 1 more each)` : ""}`
         : built ? `${E.TERRAIN_WORD[h.material]}, built over: no ${h.material} here`
         : `${E.TERRAIN_WORD[h.material]}: build a ${CAMP[h.material]} here for a ${h.material} source that never runs out`);
     } else if (mats && !tolls && h.material) {
@@ -139,7 +139,7 @@ export function renderBoard(svg, state, handlers) {
     if (h.isKey) title.push(`spring village: building here makes a friendship${state.config.keysPerHighland > 1 && h.band === "highland" ? ` (${state.config.keysPerHighland} in the highland)` : ""}${state.config.villageSlots > 1 ? `; up to ${state.config.villageSlots} players may each build one` : ""}`);
     if (showHubs && state.hubs.includes(h.key)) title.push("hub: a canal route from water to here completes a crossing");
 
-    if (canBuildAny && E.canBuild(state, h.key, handlers.buildType).ok) {
+    if (canBuildAny && E.canBuild(state, h.key, handlers.buildType, undefined, handlers.buildSlot || undefined).ok) {
       poly.classList.add("target");
       const price = E.buildPrice(state, h.key, handlers.buildType, state.current, haul);
       title.push(`click to build for ${price.total}${price.picks.length ? ` (${price.picks.map((x) => E.cubeNote(state, x)).join("; ")})` : ""}`);
@@ -274,7 +274,12 @@ export function renderBoard(svg, state, handlers) {
  * it. An emptied slot shows what it printed (+1 income on the inner ring).
  * Slots this player can take now are outlined; the rest need a leap.
  */
-export function renderTechBoard(state, pi, size = 15) {
+/**
+ * A player's lodge as a honeycomb. `opts` (all optional) make it interactive:
+ * pickable (a Set of slot ids that can be built now), selected (a slot id),
+ * onPick(slotId), onHover(slot or null). Without them it is a picture.
+ */
+export function renderTechBoard(state, pi, size = 15, opts = {}) {
   const NS2 = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(NS2, "svg");
   const p = state.players[pi], taken = p.taken || [];
@@ -296,6 +301,8 @@ export function renderTechBoard(state, pi, size = 15) {
     const [cx, cy] = pos(...place(x.id));
     xs.push(cx); ys.push(cy);
     const g = el("g", { class: "tech-slot" }, svg);
+    // The title comes first in the group: browsers that show SVG tooltips look for it there.
+    const tip = x.id === "centre" ? null : el("title", {}, g);
     if (x.id === "centre") {
       el("polygon", { points: hexPts(cx, cy), fill: "#fbf6ea", stroke: "#8a7350", "stroke-width": 1 }, g);
       continue;
@@ -309,9 +316,24 @@ export function renderTechBoard(state, pi, size = 15) {
     const bt = state.buildingTypes.find((b) => b.id === x.token);
     const plays = E.techLevel(state) >= (x.ring === "inner" ? 1 : 2);
     if (plays && gone) el("text", { x: cx, y: cy - size * 0.35, "text-anchor": "middle", "font-size": size * 0.42, class: "tech-name" }, g).textContent = rename(x.name);
-    el("title", {}, g).textContent = `${x.sector}, ${x.ring === "inner" ? "inner" : "outer"} slot: ${gone ? "built" : `a ${rename(bt?.name || x.token)} to place`}`
+    tip.textContent = `${x.sector}, ${x.ring === "inner" ? "inner" : "outer"} slot: ${gone ? "built" : `a ${rename(bt?.name || x.token)} to place`}`
       + `${x.income ? `; +${x.income} income when built` : ""}${gone ? "" : near ? "; can be built now" : `; out of reach: a leap costs ${state.config.techLeapCost} pearl`}`
       + (plays ? `\n${rename(x.name)}${gone ? " (yours)" : ""}: ${x.text}` : "");
+    g.dataset.slot = x.id;
+    if (opts.selected === x.id) g.classList.add("selected");
+    if (opts.onHover) {
+      g.addEventListener("pointerenter", () => opts.onHover(x));
+      g.addEventListener("pointerleave", () => opts.onHover(null));
+      g.addEventListener("focus", () => opts.onHover(x));
+      g.addEventListener("blur", () => opts.onHover(null));
+      g.setAttribute("tabindex", "0");
+    }
+    if (opts.onPick && opts.pickable?.has(x.id)) {
+      g.classList.add("pickable");
+      g.setAttribute("role", "button");
+      g.addEventListener("click", () => opts.onPick(x.id));
+      g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); opts.onPick(x.id); } });
+    }
   }
   const pad = size + 2;
   svg.setAttribute("viewBox", `${Math.min(...xs) - pad} ${Math.min(...ys) - pad} ${Math.max(...xs) - Math.min(...xs) + 2 * pad} ${Math.max(...ys) - Math.min(...ys) + 2 * pad}`);

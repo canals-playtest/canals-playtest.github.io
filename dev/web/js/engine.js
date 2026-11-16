@@ -304,6 +304,7 @@ export function buildingTypes(rows) {
     yield: Number(r.yield) || 0,
     needs: (r.needs || "").split("+").map((x) => x.trim().toLowerCase()).filter((x) => ["clay", "wood", "stone"].includes(x)),
     digDiscount: Number(r.dig_discount) || 0,  // off the owner's digs that touch its hex
+    freeDig: Number(r.free_dig) || 0,          // prototype: digs given at once when built, at no cost
     handSize: Number(r.hand_size) || 0,
     port: truthy(r.port),           // an inland port: import cubes can be hauled from here
     lock: truthy(r.lock),           // hauls through canals on its borders pay its owner 1 (hauling "tolls")
@@ -526,7 +527,7 @@ function log(state, msg) { if (!state.quiet) state.log.push({ round: state.round
 export function cloneState(state, rng) {
   const c = { ...state, quiet: true, log: [], history: [] };
   const deep = structuredClone({ dug: state.dug, buildings: state.buildings, claimed: state.claimed, cubes: state.cubes,
-    supply: state.supply, crossings: state.crossings, tokenClaimed: state.tokenClaimed, capstones: state.capstones || {}, prizes: state.prizes || {}, players: state.players, market: state.market, trash: state.trash, turn: state.turn });
+    supply: state.supply, crossings: state.crossings, tokenClaimed: state.tokenClaimed, capstones: state.capstones || {}, prizes: state.prizes || {}, players: state.players, market: state.market, trash: state.trash, turn: state.turn, wear: state.wear || {} });
   Object.assign(c, deep);
   if (rng !== undefined) c.rng = (rng >>> 0) || 1;
   return c;
@@ -899,9 +900,8 @@ export function playCard(state, uid, discardUids = [], board = null) {
 // cached per `dug` object and its size. Clones get their own `dug` object.
 const NET_CACHE = new WeakMap();
 function netEntry(state) {
-  const n = Object.keys(state.dug).length;
   let e = NET_CACHE.get(state.dug);
-  if (!e || e.n !== n) { e = { n, link: null, net: null }; NET_CACHE.set(state.dug, e); }
+  if (!e) { e = { link: null, net: null }; NET_CACHE.set(state.dug, e); }
   return e;
 }
 
@@ -1007,7 +1007,7 @@ export function checkInland(state, quiet = false) {
 export function digCost(state, ek, pi = state.current) {
   const [c1, c2] = edgeCorners(ek);
   let camp = 0;   // a digging camp of yours touching the edge; camps do not stack
-  for (const [hk, list] of Object.entries(state.buildings)) {
+  if (state.buildingTypes.some((b) => b.digDiscount > 0)) for (const [hk, list] of Object.entries(state.buildings)) {
     for (const b of list) {
       const d = btype(state, b.type).digDiscount;
       if (b.p === pi && d > camp) { const hc = hexCorners(hk); if (hc.includes(c1) || hc.includes(c2)) camp = d; }
@@ -1020,6 +1020,7 @@ export function digCost(state, ek, pi = state.current) {
     const dig = (h) => Math.max(0, b.terrain[h.terrain].digCost + (h.feature === "hills" ? 0 : b.features?.[h.feature]?.digMod || 0));
     cost = Math.max(dig(b.hexes[e.a]), dig(b.hexes[e.b]));
   }
+  if (pi === state.current && (state.turn?.pool?.freeDig || 0) > 0) return 0;   // a Burrow's free dig
   let c = Math.max(0, cost - (state.turn?.pool?.digDiscount || 0) - camp);
   // Dredging (technology): your first dig each turn costs 1 less, never below 1.
   if (c > 1 && state.tech && pi === state.current && !(state.turn?.actions || []).some((a) => a.type === "dig") && hasTech(state, pi, "dredging")) c -= 1;
@@ -1051,9 +1052,11 @@ export function dig(state, ek) {
   const t = state.turn, p = currentPlayer(state), e = state.board.edges[ek];
   const cost = digCost(state, ek);
   const before = networkHexes(state);
+  if ((t.pool.freeDig || 0) > 0) { t.pool.freeDig--; p.stats.freeDigs = (p.stats.freeDigs || 0) + 1; }
   t.pool.dig--;
   p.money -= cost; p.stats.spent += cost; p.stats.digs++;
   state.dug[ek] = state.current;
+  NET_CACHE.delete(state.dug);
   t.actions.push({ type: "dig", edge: ek, cost });
   log(state, `${p.name} digs the ${e.a}|${e.b} border for ${cost}.`);
 
@@ -1211,13 +1214,26 @@ export function hauls(state, link = linkedNetwork(state), pi = state.current) {
 // owner of every canal of someone else's, and for stone the bank as well.
 // --------------------------------------------------------------------------- //
 
+/** What n stumps add to a source's price: wearStep for every wearEvery stumps. */
+export function wearAt(state, n) {
+  const cfg = state.config;
+  if (cfg.wearFree) return (cfg.wearStep || 0) * Math.max(0, n - cfg.wearFree + 1);   // the first wearFree loads at the plain price, then 1 more each
+  return Math.floor(n / (cfg.wearEvery || 1)) * (cfg.wearStep || 0);
+}
+
 /** Where each resource comes from: [{ hex, owner, fee }]. Clay: any shore hex, free. */
-function tollSources(state, r, pi) {
-  const out = [];
+function tollSources(state, r, pi, skip = null) {
+  const out = [], cap = state.config.sourceLoads || 0;
   for (const [hk, h] of Object.entries(state.board.hexes)) {
     if (r === "clay") { if (h.shore) out.push({ hex: hk, owner: undefined, fee: 0 }); continue; }
+    if (h.shore && state.config.importPrice > 0) out.push({ hex: hk, owner: undefined, fee: state.config.importPrice, wear: 0, import: true });
     const o = extractorOwner(state, hk);
-    if (o !== undefined && h.material === r) out.push({ hex: hk, owner: o, fee: o === pi ? 0 : state.config.extractionFee });
+    if (o !== undefined && h.material === r) {
+      if (cap && ((state.wear || {})[hk] || 0) >= cap) continue;   // worked out
+      if (skip && skip.has(hk)) continue;
+      const wear = wearAt(state, (state.wear || {})[hk] || 0);
+      out.push({ hex: hk, owner: o, fee: (o === pi ? 0 : state.config.extractionFee) + wear, wear });
+    }
   }
   return out;
 }
@@ -1238,13 +1254,14 @@ export function tollRoutes(state, link = linkedNetwork(state), pi = state.curren
     (adj.get(c2) || adj.set(c2, []).get(c2)).push([c1, ek]);
   }
   const cache = {};
-  const search = (r) => {
-    if (cache[r]) return cache[r];
+  const search = (r, skip = null) => {
+    const ck = skip ? r + "|" + [...skip].sort().join(";") : r;
+    if (cache[ck]) return cache[ck];
     const stone = r === "stone" && !(state.tech && hasTech(state, pi, "stoneboats"));
     const w = (ek) => (state.dug[ek] === pi ? 0 : cfg.tollPerCanal) + (stone ? cfg.stoneBankToll : 0);
     const dist = new Map(), prev = new Map(), from = new Map();
     const open = [];
-    for (const src of tollSources(state, r, pi)) {
+    for (const src of tollSources(state, r, pi, skip)) {
       for (const c of hexCorners(src.hex)) {
         if (dist.has(c) && dist.get(c) <= src.fee) continue;
         dist.set(c, src.fee); from.set(c, src); prev.delete(c); open.push(c);
@@ -1260,10 +1277,10 @@ export function tollRoutes(state, link = linkedNetwork(state), pi = state.curren
         if (!dist.has(n) || nd < dist.get(n)) { dist.set(n, nd); prev.set(n, [c, ek]); from.set(n, from.get(c)); open.push(n); }
       }
     }
-    return (cache[r] = { dist, prev, from });
+    return (cache[ck] = { dist, prev, from });
   };
-  const best = (r, hk) => {
-    const { dist, prev, from } = search(r);
+  const best = (r, hk, skip = null) => {
+    const { dist, prev, from } = search(r, skip);
     let end = null;
     for (const c of hexCorners(hk)) if (dist.has(c) && (end === null || dist.get(c) < dist.get(end))) end = c;
     if (end === null) return null;
@@ -1279,7 +1296,7 @@ export function tollRoutes(state, link = linkedNetwork(state), pi = state.curren
     }
     if (cfg.tollMode === "owner") for (const o of Object.keys(owed)) owed[o] = cfg.tollPerCanal;
     const tolls = Object.values(owed).reduce((a, x) => a + x, 0);
-    return { resource: r, kind: "source", from: src.hex, owner: src.owner, fee: src.fee, edges, owed, bank, tolls, cost: src.fee + tolls + bank };
+    return { resource: r, kind: src.import ? "import" : "source", from: src.hex, owner: src.owner, fee: src.fee, wear: src.wear || 0, import: !!src.import, edges, owed, bank, tolls, cost: src.fee + tolls + bank };
   };
   return { tolls: true, pi, best };
 }
@@ -1294,7 +1311,16 @@ function payTolls(state, p, picks) {
   };
   for (const x of picks) {
     p.stats.hauled[x.resource] = (p.stats.hauled[x.resource] || 0) + 1;
-    if (x.fee && x.owner !== undefined && x.owner !== pi) credit(x.owner, x.fee, "fees");
+    if (x.import) p.stats.imports = (p.stats.imports || 0) + 1;
+    if (x.owner !== undefined && x.resource !== "clay") {
+      state.wear = state.wear || {}; state.wear[x.from] = (state.wear[x.from] || 0) + 1;
+      if (x.owner === pi) p.stats.ownLoads = (p.stats.ownLoads || 0) + 1;
+      else {
+        const q = state.players[x.owner];
+        credit(x.owner, x.fee + (x.extraWear || 0), "fees");
+        q.renown = (q.renown || 0) + 1; q.stats.sold = (q.stats.sold || 0) + 1; p.stats.bought = (p.stats.bought || 0) + 1;
+      }
+    }
     for (const [o, n] of Object.entries(x.owed || {})) credit(Number(o), n, "tolls");
     // A Lock: every haul through a canal on its borders, its owner's included, pays its owner 1, from the bank.
     const paid = new Set();
@@ -1335,9 +1361,30 @@ export function buildPrice(state, hk, typeId, pi = state.current, haul = undefin
     const routes = haul?.tolls && haul.pi === pi ? haul : tollRoutes(state, linkedNetwork(state), pi);
     const picks = [];
     for (const r of bt.needs) {
-      const best = routes.best(r, hk);
+      let best = routes.best(r, hk);
+      const capL = cfg.sourceLoads || 0;
+      if (capL && best && r !== "clay") {
+        const skip = new Set();
+        for (let guard = 0; best && !best.import && best.owner !== undefined && guard < 20; guard++) {
+          const used = picks.filter((x) => x.from === best.from && x.resource === r).length;
+          if (((state.wear || {})[best.from] || 0) + used < capL) break;
+          skip.add(best.from); best = routes.best(r, hk, skip);
+        }
+      }
       if (!best) return { total: Infinity, ok: false, picks };
-      picks.push(best);
+      const dup = picks.filter((x) => x.from === best.from && x.resource === r).length;
+      const n0 = (state.wear || {})[best.from] || 0;
+      const extra = r === "clay" || best.import || best.owner === undefined ? 0 : wearAt(state, n0 + dup) - wearAt(state, n0);
+      picks.push(extra ? { ...best, cost: best.cost + extra, extraWear: extra } : best);
+    }
+    // Prototype: one barge a build. A canal owner is paid once for a build, however many loads pass.
+    if (cfg.tollsPerBuild) {
+      const paidTo = new Set();
+      for (let i = 0; i < picks.length; i++) {
+        const x = picks[i]; let less = 0; const owed = { ...(x.owed || {}) };
+        for (const o of Object.keys(owed)) { if (paidTo.has(o)) { less += owed[o]; delete owed[o]; } else paidTo.add(o); }
+        if (less) picks[i] = { ...x, owed, tolls: x.tolls - less, cost: x.cost - less };
+      }
     }
     // Barge (technology): one toll fewer on each build, off the largest owed.
     if (state.tech && hasTech(state, pi, "barge")) {
@@ -1422,6 +1469,7 @@ export function canBuild(state, hk, typeId, haul = undefined, slotId = undefined
   if (state.config.buildNeedsNetwork && !networkHexes(state).has(hk)) return fail("must be on the canal network");
   if (state.config.buildNeedsOwnCanal && !ownCanalAt(state, hk, state.current)) return fail("you may build only where one of your own linked canals runs");
   if (bt.site && h.material !== bt.site) return fail(`a ${bt.name} goes only on a ${TERRAIN_WORD[bt.site]}`);
+  if (state.config.sourceFirst && bt.extracts && here.length) return fail(`a ${bt.name} must be the first building on its hex`);
   if (canalsAround(state, hk) < bt.minCanals) return fail(`${bt.name} needs ${bt.minCanals}+ canals around it`);
   if (state.tech) {
     const list = buildSlots(state, state.current, bt.id);
@@ -1498,6 +1546,7 @@ export function build(state, hk, typeId, slotId = undefined) {
   if (state.config.materials && h.material && state.config.hauling !== "tolls") {
     extras.push(bt.extracts ? `${bt.yield} ${h.material} on the hex` : `the ${TERRAIN_WORD[h.material]} is used up`);
   }
+  if (bt.freeDig) { t.pool.dig = (t.pool.dig || 0) + bt.freeDig; t.pool.freeDig = (t.pool.freeDig || 0) + bt.freeDig; }
   t.actions.push({ type: "build", hex: hk, building: bt.id, cost, cubes: price.picks.length ? price.picks.map((x) => `${x.resource}:${x.from}`) : undefined });
   log(state, `${p.name} builds ${state.buildingTypes.length > 1 ? `a ${bt.name} ` : ""}on ${hk} for ${cost} (${extras.join(", ")}).`);
   checkPrizes(state);
@@ -2002,7 +2051,7 @@ export function score(state, pi) {
   if (caps.includes("Market")) counts.build += 2;
   const m = (r) => multiplier(cfg, counts[r]);
 
-  let buildingScore = caps.includes("Works") ? 4 : 0;
+  let buildingScore = (caps.includes("Works") ? 4 : 0) + (p.renown || 0) * (cfg.renownPerLoad || 0);
   for (const [hk, list] of Object.entries(state.buildings)) {
     for (const b of list) if (b.p === pi) buildingScore += buildingVP(state, hk, b);
   }

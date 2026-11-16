@@ -26,7 +26,40 @@ const REMOTE_DIG = -6.0;
 const LOOKAHEAD = 6;    // digs of steering toward a valuable hex
 
 export const LANES = ["dig", "build", "buy", "special"];
-const ROLES = ["dig", "build", "buy", "earn", "special"];
+
+// What a new source of r at hk is worth to pi (prototype, docs/reactive-play.md 11):
+// the loads the table will still haul, the families whose canals come near it,
+// the sources already near (a worn one counts for less), a shell and a half
+// for each load sold, a point of renown if the rules give one, and what its
+// owner saves.
+const hexDist = (b, a, c) => { const x = b.hexes[a], y = b.hexes[c], dq = x.q - y.q, dr = x.r - y.r; return Math.max(Math.abs(dq), Math.abs(dr), Math.abs(dq + dr)); };
+function sourceContext(st, pi, link) {
+  const rivals = { wood: [], stone: [] };
+  for (const hk of Object.keys(st.buildings)) {
+    const r = st.board.hexes[hk].material;
+    if (!rivals[r] || E.extractorOwner(st, hk) === undefined) continue;
+    const used = (st.wear || {})[hk] || 0, cap = st.config.sourceLoads || 0;
+    rivals[r].push([hk, cap ? Math.max(0, cap - used) / cap : 1 / (1 + E.wearAt(st, used)), E.extractorOwner(st, hk)]);
+  }
+  const others = st.players.map((_, q) => (q === pi ? null : [...touched(st, q, link)]));
+  return { rivals, others };
+}
+function sourceValue(st, pi, hk, r, ctx) {
+  const cfg = st.config, b = st.board, f = Math.min(1, E.roundsLeft(st) / 30);
+  const demand = (r === "wood" ? 16 : 6) * f;
+  let near = 0, mineNear = false;
+  for (const [k, w, o] of ctx.rivals[r] || []) {
+    const d = hexDist(b, hk, k);
+    near += w * (d <= 2 ? 1 : d <= 4 ? 0.5 : 0.25);
+    if (o === pi && d <= 4) mineNear = true;
+  }
+  let customers = 0;
+  for (const list of ctx.others) if (list && list.some((k) => hexDist(b, hk, k) <= 3)) customers++;
+  const share = customers / Math.max(1, st.players.length - 1);
+  const cap = cfg.sourceLoads || 99;
+  const sales = Math.min(cap * 0.75, demand * 0.75 * share / (1 + near));
+  return 1 + sales * (MONEY_VP * 1.5 + (cfg.renownPerLoad || 0)) + (mineNear ? 0.3 : 1) * demand * 0.25 * MONEY_VP * 2;
+}
 
 // --------------------------------------------------------------------------- //
 // Sliders, plans and presets
@@ -312,9 +345,20 @@ export class SearchBot {
     const open = (hk) => b.hexes[hk].bonus && st.claimed[hk] === undefined;
     const worth = {};
     let any = false;
+    const srcPull = {};   // free source sites I do not touch yet, while I have the building to put there
+    if (cfg.hauling === "tolls" && (cfg.sourceLoads || cfg.wearStep || cfg.renownPerLoad) && !this.oldSources) {
+      const typeOf = { wood: "camp", stone: "quarry" }, memo = {};
+      for (const [hk, h] of Object.entries(b.hexes)) {
+        if (!h.material || !typeOf[h.material] || mine.has(hk) || (st.buildings[hk] || []).length >= h.slots) continue;
+        const left = (memo[h.material] ??= (E.techOn(st) ? E.buildSlots(st, pi, typeOf[h.material]).length : 1));
+        if (!left) continue;
+        srcPull[hk] = 0.5 * sourceValue(st, pi, hk, h.material, (memo.ctx ??= sourceContext(st, pi, link)));
+      }
+    }
     for (const [hk, h] of Object.entries(b.hexes)) {
+      if (srcPull[hk] && net.has(hk)) { worth[hk] = srcPull[hk]; any = true; }
       if (geo.water(hk) || net.has(hk)) continue;
-      let w = 0;
+      let w = srcPull[hk] || 0;
       if (!h.shore) w += reachHex(hk);
       if (open(hk)) w += 4 * sl.discovery;
       if (h.slots > 0) {
@@ -333,6 +377,7 @@ export class SearchBot {
         if (geo.water(hk)) continue;
         const h = b.hexes[hk];
         if (live && !h.shore && !mine.has(hk)) v += reachHex(hk);
+        if (live && srcPull[hk]) v += srcPull[hk];
         if (net.has(hk)) continue;
         v += 1;
         if (!h.shore) {
@@ -359,6 +404,7 @@ export class SearchBot {
     const haul = cfg.materials ? E.hauls(st) : undefined;
     const geo = geometry(b);
     let best = null, bestV = -1e9;
+    const srcMemo = {};
     for (const [hk, h] of Object.entries(b.hexes)) {
       if (h.slots <= 0 || geo.water(hk)) continue;
       if ((st.buildings[hk] || []).length >= h.slots && !E.hasTech(st, pi, "storey")) continue;
@@ -376,7 +422,8 @@ export class SearchBot {
         v += INCOME_VP * bt.income * left;
         if (E.techOn(st)) v += techValue(st, pi, bt.id, left);
         v += 0.5 * bt.moneyPerCanal * E.canalsAround(st, hk);
-        if (cfg.materials && h.material && bt.extracts) v += cfg.hauling === "tolls" ? 1 + 2.5 * left : 1 + 0.3 * bt.yield * left;   // fees from others, cheap builds for you
+        if (cfg.materials && h.material && bt.extracts) v += cfg.hauling !== "tolls" ? 1 + 0.3 * bt.yield * left : this.oldSources || !(cfg.wearStep || cfg.sourceLoads || cfg.renownPerLoad) ? 1 + 2.5 * left : sourceValue(st, pi, hk, h.material, (srcMemo.ctx ??= sourceContext(st, pi, E.linkedNetwork(st))));   // fees from others, cheap builds for you
+        if (bt.freeDig) v += 1.8 * bt.freeDig;   // a dig for nothing, now
         if (bt.lock) v += 0.6 * E.canalsAround(st, hk) * left;   // the bank pays for others' hauls through it
         if (bt.digDiscount) v += 2 * bt.digDiscount * left * (0.5 + sl.dig);
         if (bt.handSize) v += 6 * bt.handSize * left;
@@ -470,6 +517,7 @@ export class SearchBot {
     const pool = st.turn.pool;
     for (let guard = 0; guard < 30 && pool.dig > 0; guard++) { const ek = this.pickDig(st); if (!ek || !E.dig(st, ek).ok) break; }
     for (let guard = 0; guard < 30 && pool.build > 0; guard++) { const x = this.pickBuild(st); if (!x || !E.build(st, ...x).ok) break; }
+    for (let guard = 0; guard < 30 && pool.dig > 0; guard++) { const ek = this.pickDig(st); if (!ek || !E.dig(st, ek).ok) break; }   // a Burrow's free dig
     for (let guard = 0; guard < 30 && pool.buy > 0; guard++) { const x = this.pickBuy(st); if (x === null || !E.buy(st, ...x).ok) break; }
     for (let guard = 0; guard < 10; guard++) { const x = this.pickTrash(st); if (!x || !E.trash(st, ...x).ok) break; }
     const p = E.currentPlayer(st);

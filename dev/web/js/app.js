@@ -66,6 +66,7 @@ let state = null;         // engine state
 let undo = [];            // JSON snapshots within the current turn
 let sel = { play: null, discards: new Set() };
 let buildType = null;     // building type chosen in the picker
+let buildSlot = null;     // the lodge slot that building comes from (which Burrow, which Wharf)
 let buyTop = false;       // put the next bought card on top of the draw pile (rule buyOnTopCost)
 let redrawing = false;    // a pearl redraw is waiting for a hand card
 let aiTimer = null;       // pending computer turn
@@ -867,13 +868,17 @@ function renderGame(newTurn = false) {
   const acting = canMove(state.current);          // this device moves for the current seat
   const vi = viewerSeat(), me = vi === null ? null : state.players[vi];
   if (!state.buildingTypes.some((b) => b.id === buildType)) buildType = state.buildingTypes[0].id;
+  // The lodge slot the building comes from: the one chosen if it can still be built, else the engine's choice.
+  if (E.techOn(state) && acting && t.phase === "resolve" && (t.pool.build || 0) > 0) {
+    if (!E.pickSlot(state, state.current, buildType, buildSlot || "none")) buildSlot = E.pickSlot(state, state.current, buildType)?.id || null;
+  } else buildSlot = null;
   const boardSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   boardSvg.setAttribute("class", "board");
   renderBoard(boardSvg, state, {
     onDig: (ek) => act({ type: "dig", edge: ek }),
-    onBuild: (hk) => act({ type: "build", hex: hk, kind: buildType }),
+    onBuild: (hk) => act({ type: "build", hex: hk, kind: buildType, ...(buildSlot ? { slot: buildSlot } : {}) }),
     onHarbour: (hk) => act({ type: "harbour", hex: hk }),
-    buildType, interactive: acting,
+    buildType, buildSlot, interactive: acting,
   });
   const zoomCtl = attachZoom(boardSvg);
   // The price of a dig or build beside the pointer, not in a slow browser tooltip.
@@ -1372,18 +1377,59 @@ function myPanel(me, vi) {
   return { stats, extra };
 }
 
+/** What a lodge slot is, in a sentence: its building, its state for player pi, its craft and income. */
+function slotWords(pi, x) {
+  const p = state.players[pi], taken = (p.taken || []).includes(x.id);
+  const bt = state.buildingTypes.find((b) => b.id === x.token);
+  const plays = E.techLevel(state) >= (x.ring === "inner" ? 1 : 2);
+  const income = E.buildIncome(state, x.token, x.id);
+  const status = taken ? "placed: its craft is yours"
+    : !E.ringOpen(state, x) ? "the outer ring opens with the second tide"
+    : E.slotReachable(state, pi, x.id) ? "can be placed now"
+    : state.config.techLeapCost >= 0 ? `out of reach: next to no empty slot (a leap costs ${state.config.techLeapCost} pearl)` : "out of reach: next to no empty slot";
+  return { name: rename(bt?.name || x.token), craft: plays ? rename(x.name) : null, text: plays ? x.text : "", income, status, taken };
+}
+
 /** The lodge, large: the honeycomb and its crafts, with what is yours and what you can reach. */
 function lodgeView(pi) {
   const p = state.players[pi], taken = new Set(p.taken || []);
-  const level = E.techLevel(state);
-  const rows = state.tech.slots.filter((x) => level >= (x.ring === "inner" ? 1 : 2)).map((x) => {
-    const mine = taken.has(x.id), near = !mine && E.slotReachable(state, pi, x.id);
-    return h("li", { class: mine ? "mine" : near ? "near" : "" },
-      h("b", {}, rename(x.name)), " ", h("span", { class: "muted" }, mine ? "(yours) " : near ? "(can build) " : ""), x.text);
-  });
-  return h("div", { class: "lodge" },
+  const level = E.techLevel(state), t = state.turn;
+  // While this seat has a build to make, the lodge is where the building is chosen.
+  const picking = pi === state.current && canMove(pi) && t.phase === "resolve" && (t.pool.build || 0) > 0;
+  const pickable = new Set(picking ? state.tech.slots.filter((x) => E.pickSlot(state, pi, x.token, x.id)).map((x) => x.id) : []);
+  const info = h("div", { class: "lodge-info", "aria-live": "polite" });
+  const list = h("ul", { class: "crafts" });
+  let boardEl = null;
+  const describe = (x) => {
+    if (!x) return [h("span", { class: "muted" }, picking ? "Click a building you can reach to place that one; point at any slot to read its craft."
+      : "Point at a slot to read its craft.")];
+    const w = slotWords(pi, x);
+    return [h("b", {}, w.name), h("span", { class: "muted" }, ` · ${w.status}`),
+      h("div", {}, w.craft ? [h("b", {}, w.craft), ": ", w.text] : "No craft under this slot yet.",
+        w.income ? h("span", { class: "muted" }, ` · +${w.income} income`) : null)];
+  };
+  const show = (x) => {
+    const cur = x || state.tech.slots.find((y) => y.id === buildSlot && picking) || null;
+    info.replaceChildren(...describe(cur));
+    for (const li of list.children) li.classList.toggle("hot", !!x && li.dataset.slot === x.id);
+    boardEl?.querySelectorAll(".tech-slot").forEach((g) => g.classList.toggle("hot", !!x && g.dataset.slot === x.id));
+  };
+  boardEl = renderTechBoard(state, pi, 22, { pickable, selected: picking ? buildSlot : null, onHover: show,
+    onPick: (id) => { const x = E.techSlot(state, id); buildType = x.token; buildSlot = id; renderGame(); } });
+  for (const x of state.tech.slots.filter((y) => level >= (y.ring === "inner" ? 1 : 2))) {
+    const mine = taken.has(x.id), near = !mine && E.ringOpen(state, x) && E.slotReachable(state, pi, x.id);
+    const bt = state.buildingTypes.find((b) => b.id === x.token);
+    const li = h("li", { class: mine ? "mine" : near ? "near" : "", "data-slot": x.id },
+      h("b", {}, rename(x.name)), " ", h("span", { class: "muted" }, `${mine ? "yours" : `under a ${rename(bt?.name || x.token)}${near ? ", in reach" : ""}`} · `), x.text);
+    li.addEventListener("pointerenter", () => show(x));
+    li.addEventListener("pointerleave", () => show(null));
+    list.append(li);
+  }
+  show(null);
+  return h("div", { class: "lodge" + (picking ? " picking" : "") },
     h("h3", {}, `${W.Lodge} `, h("span", { class: "muted" }, "— each building you place empties a slot: you gain its income and its craft")),
-    h("div", { class: "lodge-row" }, renderTechBoard(state, pi, 22), h("ul", { class: "crafts" }, rows)),
+    info,
+    h("div", { class: "lodge-row" }, boardEl, list),
     Object.keys(state.capstones || {}).length || E.tideNow(state) >= 3
       ? h("p", { class: "hint" }, "Masteries: ", Object.entries(E.CAPSTONES).map(([k, c]) => h("span", { class: "pill", title: c.text },
         rename(c.name), state.capstones?.[k] !== undefined ? ` · ${state.players[state.capstones[k]].name}` : ""))) : null);
@@ -1416,7 +1462,7 @@ function promptBar(acting, p) {
       : "A boost is the line after 'Discard': discard that many other cards for the extra. Or play it plain.";
   } else {
     const pool = t.pool, todo = [];
-    if (pool.dig > 0) todo.push(`click a dashed border to dig (${pool.dig} left)`);
+    if (pool.dig > 0) todo.push(`click a dashed border to dig (${pool.dig} left${pool.freeDig ? `, ${pool.freeDig} of them free from your Burrow` : ""})`);
     if (pool.build > 0) todo.push(`click a highlighted hex to build (${pool.build} left)`);
     if (pool.buy > 0) todo.push(`click a market card to buy (${pool.buy} left)`);
     if ((pool.trashAny || 0) + (pool.trashHand || 0) + (pool.trashDiscard || 0) > 0) todo.push("click a card to remove it from your deck");
@@ -1495,15 +1541,27 @@ function pearlMenu(p) {
 }
 
 function buildingPicker(p) {
+  const pi = state.current, tech = E.techOn(state);
   return h("div", { class: "picker" }, state.buildingTypes.map((bt) => {
-    const used = E.builtCount(state, state.current, bt.id);
-    const out = bt.supply && used >= bt.supply;
-    return h("button", {
+    const used = E.builtCount(state, pi, bt.id);
+    const slots = tech ? E.buildSlots(state, pi, bt.id) : [];
+    const out = tech ? !slots.length : bt.supply && used >= bt.supply;
+    const left = tech ? state.tech.slots.filter((x) => x.token === bt.id && !(p.taken || []).includes(x.id)).length : bt.supply ? bt.supply - used : 0;
+    const typeBtn = h("button", {
       class: "bt" + (bt.id === buildType ? " on" : ""), disabled: out || null, title: bt.rules,
-      onclick: () => { buildType = bt.id; renderGame(); },
-    }, h("b", {}, icon(hasSymbol(`b-${bt.id}`) ? `b-${bt.id}` : "b-plain", "", null, state.players[state.current].colour), ` ${bt.name}`),
-      h("span", { class: "muted" }, [bt.extraCost ? `+${bt.extraCost} cost` : "", bt.supply ? `${bt.supply - used} left` : ""].filter(Boolean).join(" · ")),
+      onclick: () => { buildType = bt.id; buildSlot = null; renderGame(); },
+    }, h("b", {}, icon(hasSymbol(`b-${bt.id}`) ? `b-${bt.id}` : "b-plain", "", null, state.players[pi].colour), ` ${rename(bt.name)}`),
+      h("span", { class: "muted" }, [bt.extraCost ? `+${bt.extraCost} cost` : "", left ? `${left} left` : ""].filter(Boolean).join(" · ")),
       h("small", {}, (state.config.materials && bt.needs.length ? `Needs ${bt.needs.join(" + ")}. ` : "") + bt.rules));
+    // Which one: each token of this type sits on its own lodge slot, with its own craft and income.
+    const chips = slots.length ? h("div", { class: "slot-chips" }, slots.map(({ id, leap }) => {
+      const w = slotWords(pi, E.techSlot(state, id)), ok = !!E.pickSlot(state, pi, bt.id, id);
+      return h("button", { class: "slot-chip" + (bt.id === buildType && id === buildSlot ? " on" : ""), disabled: !ok || null,
+        title: `${w.craft ? `${w.craft}: ${w.text}` : w.name}${leap ? ` (a leap: ${state.config.techLeapCost} pearl)` : ""}`,
+        onclick: () => { buildType = bt.id; buildSlot = id; renderGame(); } },
+      w.craft || w.name, w.income ? h("span", { class: "muted" }, ` +${w.income}`) : null, leap ? h("span", { class: "muted" }, " · leap") : null);
+    })) : null;
+    return h("div", { class: "bt-box" }, typeBtn, chips);
   }));
 }
 
