@@ -10,11 +10,32 @@
 //            discoveries, building sites and key tiles.
 
 import * as E from "./engine.js";
-import { legalDiscards } from "./notation.js";
+import { legalDiscards, parseEffects } from "./notation.js";
 
+/**
+ * What an unclaimed site token on hk is worth to whoever builds there, in
+ * rough VP (`left`: 0..1, how much game remains for income to pay).
+ */
+export function tokenValue(s, hk, left) {
+  const tok = s.tokens?.[hk];
+  if (!tok || s.tokenClaimed?.[hk] !== undefined) return 0;
+  const per = { money: 0.3, income: 1.0 * left * 3, dig: 1, build: 1, buy: 1, trashAny: 0.8, trashHand: 0.6, trashDiscard: 0.6, pearl: 0.8, extraDraw: 0.5 };
+  return parseEffects(tok.code).reduce((a, x) => a + (per[x.kind] ?? 0.5) * x.n, 0);
+}
+
+/**
+ * A seeded random number generator (mulberry32, as the engine's shuffles).
+ * It was a plain LCG, whose first draws from consecutive seeds were
+ * correlated: seats and pools picked by seed g, g+1, ... were biased.
+ */
 export function makeRng(seed) {
   let s = seed >>> 0 || 1;
-  return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  return () => {
+    let t = (s = (s + 0x6d2b79f5) >>> 0);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
 /** Discard choices that legally pay a card's boost: [] plus one representative per legal count. */
@@ -34,15 +55,18 @@ function boostChoices(s, uid, rest) {
 
 export function randomTurn(s, rnd) {
   const pick = (a) => a[Math.floor(rnd() * a.length)];
+  if (s.turn?.phase === "harbour") return E.chooseHarbour(s, pick(E.draftChoices(s)));
+  if (s.turn?.phase === "startTech") return E.chooseStartTech(s, pick(E.startTechChoices(s)));
   const p = E.currentPlayer(s);
   if (!p.hand.length) return E.pass(s);
+  if (rnd() < 0.05 && E.canForage(s, "hand").ok) return E.forage(s, rnd() < 0.5 ? "hand" : pick(p.hand));
   const uid = pick(p.hand);
   E.playCard(s, uid, pick(boostChoices(s, uid, p.hand.filter((u) => u !== uid))));
   for (let guard = 0; guard < 20; guard++) {
     const opts = [];
     for (const ek of Object.keys(s.board.edges)) if (E.canDig(s, ek).ok) opts.push(() => E.dig(s, ek));
     for (const hk of Object.keys(s.board.hexes)) for (const bt of s.buildingTypes) if (E.canBuild(s, hk, bt.id).ok) opts.push(() => E.build(s, hk, bt.id));
-    s.market.display.forEach((_, i) => E.canBuy(s, i).ok && opts.push(() => E.buy(s, i)));
+    E.marketCards(s).forEach((_, i) => E.canBuy(s, i).ok && opts.push(() => E.buy(s, i, rnd() < 0.3 && E.canBuy(s, i, true).ok)));
     for (const u of p.discard) if (E.canTrash(s, u, "discard").ok && rnd() < 0.3) opts.push(() => E.trash(s, u, "discard"));
     if (!opts.length) break;
     pick(opts)();
@@ -61,11 +85,11 @@ export const GREEDY_TUNING = { lookahead: 6, hubWorth: 20, remoteDig: 2 };  // l
 function hexWorth(s, hk, counts) {
   const h = s.board.hexes[hk], cfg = s.config;
   let w = 0;
-  if (!h.shore && cfg.networkScore === "reach") w += Math.max(1, counts.buy) * cfg.vpPerReach;
+  if (!h.shore && cfg.networkScore === "reach") w += Math.max(0.5, counts.buy) * E.hexReach(s, hk);
   if (h.bonus && s.claimed[hk] === undefined) w += 4;
   if (h.slots > (s.buildings[hk] || []).length && s.board.terrain[h.terrain].buildable) {
-    w += 0.4 * (Math.max(1, counts.dig) * cfg.vpPerBuilding + cfg.incomePerBuilding);
-    if (h.isKey) w += Math.max(0.5, counts.special) * cfg.vpPerKey * 0.6;
+    w += 0.4 * (Math.max(0.5, counts.dig) * cfg.vpPerBuilding + cfg.incomePerBuilding);
+    if (h.isKey) w += Math.max(0.5, counts.special) * cfg.vpPerKey * 0.6 * E.villageKeys(s, hk);
   }
   if (cfg.networkScore === "crossings" && s.hubs.includes(hk) && !s.crossings.some((c) => c.hub === hk)) w += GREEDY_TUNING.hubWorth;
   return w;
@@ -96,7 +120,7 @@ function digsTo(s, adj, hk) {
 function pickDig(s) {
   const link = E.linkedNetwork(s);
   const net = E.networkHexes(s, link);
-  const counts = E.score(s, s.current).counts;
+  const counts = expectedCounts(s, s.current);
   const adj = borderGraph(s);
   // Targets: unreached hexes worth steering toward, a few digs out. Canals
   // join at corners, so distance is counted in digs along borders.
@@ -138,7 +162,8 @@ function typeExtras(s, hk, bt, left) {
     const bonus = bt.vpPerNeighbour * (near + fade);
     v += bt.neighbourCap ? Math.min(bonus, bt.neighbourCap) : bonus;
   }
-  if (cfg.materials && h.material && bt.extracts) v += 1 + 0.3 * bt.yield * fade;   // cubes: fees from others, cheap builds for you
+  if (cfg.materials && h.material && bt.extracts) v += cfg.hauling === "tolls" ? 1 + 2.5 * fade : 1 + 0.3 * bt.yield * fade;   // fees from others, cheap builds for you
+  if (bt.lock) v += 0.6 * E.canalsAround(s, hk) * fade;   // the bank pays for others' hauls through it
   if (bt.digDiscount) v += 2 * bt.digDiscount * fade;
   if (bt.handSize) v += 6 * bt.handSize * fade;
   if (bt.port && cfg.materials) v += (0.5 + 0.5 * fade) * Math.min(4, Math.max(0, (E.buildPrice(s, hk, bt.id).picks[0]?.edges ?? 0) - 1));
@@ -146,13 +171,14 @@ function typeExtras(s, hk, bt, left) {
 }
 
 /** Pearl menu, as sim/agent.py spend_pearls: an extra action of the played card's
- * kind when affordable; one pearl cashed when at the cap, so this turn's is not lost. */
+ * kind when affordable; one pearl cashed when holding 3 (on the pearl track each
+ * pearl held makes the next dearer), or at the cap. */
 function spendPearls(s) {
   const p = E.currentPlayer(s), cfg = s.config;
   if (!cfg.pearls || !p.pearls) return;
   const role = E.def(s, s.turn.played).role;
   if (["dig", "build", "buy"].includes(role) && p.pearls >= cfg.pearlActionCost && p.money >= 4) E.spendPearl(s, "action");
-  if (p.pearls >= cfg.pearlCap) E.spendPearl(s, "money");
+  if (p.pearls >= (cfg.pearlEarning === "track" ? Math.min(3, cfg.pearlCap) : cfg.pearlCap)) E.spendPearl(s, "money");
 }
 
 function greedyActions(s) {
@@ -164,17 +190,18 @@ function greedyActions(s) {
     // Build: key tiles first, then the building worth most in rough money terms.
     if (t.build > 0) {
       let best = null, bestScore = -Infinity;
-      const left = Math.max(0, s.config.rounds - s.round);
-      const counts = E.score(s, s.current).counts;
+      const left = E.roundsLeft(s);
+      const counts = expectedCounts(s, s.current);
       for (const hk of Object.keys(s.board.hexes)) {
         const h = s.board.hexes[hk];
         for (const bt of s.buildingTypes) {
           if (!E.canBuild(s, hk, bt.id).ok) continue;
           const vp = E.buildingVP(s, hk, { p: s.current, type: bt.id });
-          const sc = (h.isKey ? Math.max(0.5, counts.special) * s.config.vpPerKey : 0) + 1.2 * vp * Math.max(1, counts.dig)
-            + 0.4 * (s.config.incomePerBuilding + bt.income) * Math.min(left, 8)
+          const sc = (h.isKey && !(s.buildings[hk] || []).some((x) => x.p === s.current) ? Math.max(0.5, counts.special) * s.config.vpPerKey * E.villageKeys(s, hk) : 0) + 1.2 * vp * Math.max(0.5, counts.dig)
+            + 0.4 * (E.techOn(s) ? E.buildIncome(s, bt.id, E.pickSlot(s, s.current, bt.id)?.id) : s.config.incomePerBuilding + bt.income) * Math.min(left, 8)
+            - (E.techOn(s) && E.pickSlot(s, s.current, bt.id)?.leap ? 1.5 : 0)
             + 0.8 * bt.moneyPerCanal * E.canalsAround(s, hk) - 0.8 * E.buildCost(s, hk, bt.id)
-            + typeExtras(s, hk, bt, left);
+            + typeExtras(s, hk, bt, left) + tokenValue(s, hk, Math.min(1, left / 12)) + 1.5 * (bt.freeDig || 0);
           if (sc > bestScore) { bestScore = sc; best = [hk, bt.id]; }
         }
       }
@@ -183,13 +210,17 @@ function greedyActions(s) {
     // Buy: specials first, then the priciest affordable card.
     if (t.buy > 0) {
       let best = null, bestScore = -Infinity;
-      s.market.display.forEach((uid, i) => {
+      E.marketCards(s).forEach((uid, i) => {
         if (!E.canBuy(s, i).ok) return;
         const d = E.def(s, uid);
         const sc = d.cost + (d.role === "special" ? 5 : 0) + d.vp;
         if (sc > bestScore) { bestScore = sc; best = i; }
       });
-      if (best !== null) { E.buy(s, best); continue; }
+      if (best !== null) {
+        const d = E.def(s, E.marketCards(s)[best]);
+        E.buy(s, best, (d.cost >= 5 || d.role === "special") && d.role !== "earn" && E.canBuy(s, best, true).ok && E.roundsLeft(s) > 2);
+        continue;
+      }
     }
     // Trash: starting Earn cards once the deck has another Earn card.
     const trashable = (src) => (src === "hand" ? p.hand : p.discard).find((u) => E.canTrash(s, u, src).ok && s.cards[u].startsWith("start-earn"));
@@ -204,8 +235,10 @@ function greedyActions(s) {
 
 function value(s, pi) {
   const p = s.players[pi];
-  const left = Math.max(0, s.config.rounds - s.round);
-  const sc = E.score(s, pi).total;
+  const left = E.roundsLeft(s);
+  // Each lane's score times its expected final multiplier (expectedCounts).
+  const score = E.score(s, pi), exp = expectedCounts(s, pi, score.counts);
+  const sc = score.lanes.reduce((a, l) => a + (exp[l.mult] ?? l.m) * l.s, 0);
   // Cards bought are future turns: value them near their price, less near the end.
   const deck = E.ownedCards(p).reduce((a, u) => a + E.def(s, u).cost, 0) * (left > 8 ? 1.0 : 0.3);
   // Income only pays when an Earn card is played, so it's worth less than cash.
@@ -215,7 +248,29 @@ function value(s, pi) {
     + 1.2 * (p.pearls || 0);
 }
 
+// Lane priors (bots/lane-priors.json, "browser"): the mean number of cards of
+// each scoring colour (weighted, rule cardWeights) the greedy bot holds in its
+// final deck. The bot expects to end with its current count plus the growth
+// still to come, count + (1 - f) * prior, f the share of the game played: its
+// usual final deck at the start, the real count at the end. Starting cards
+// count 0, so without this every lane looks worthless early on. The table
+// sets it from the shipped file and what it learns after each game (app.js).
+export const LANE_ROLES = ["dig", "build", "buy", "special"];
+let lanePrior = { dig: 2, build: 2, buy: 2, special: 2 };
+export function setLanePrior(p) {
+  for (const r of LANE_ROLES) if (Number.isFinite(p?.[r])) lanePrior[r] = p[r];
+}
+export const getLanePrior = () => ({ ...lanePrior });
+
+/** Each scoring colour's expected final count for player pi. */
+export function expectedCounts(s, pi, counts = E.score(s, pi).counts) {
+  const done = s.round - 1, f = done / Math.max(1, done + E.roundsLeft(s));
+  return Object.fromEntries(LANE_ROLES.map((r) => [r, E.smoothMultiplier(s.config, counts[r] + (1 - f) * lanePrior[r])]));
+}
+
 export function greedyTurn(s) {
+  if (s.turn?.phase === "harbour") return E.chooseHarbour(s, E.bestHarbour(s));
+  if (s.turn?.phase === "startTech") return E.chooseStartTech(s, E.bestStartTech(s, E.rngFn(s)));
   const p = E.currentPlayer(s);
   if (!p.hand.length) return E.pass(s);
   const me = s.current;
@@ -226,12 +281,30 @@ export function greedyTurn(s) {
       const c = JSON.parse(base);
       if (!E.playCard(c, uid, disc).ok) continue;
       greedyActions(c);
-      // Holding cards has some option value, and a turn without discards banks a pearl.
-      const pearl = c.config.pearls && !disc.length && (c.players[me].pearls || 0) < c.config.pearlCap ? 1.2 : 0;
+      // Holding cards has some option value, and kept cards earn pearls: on the
+      // track each one is a share of the next pearl; under the earlier rule a
+      // turn without discards banks one.
+      const mine = c.players[me];
+      const pearl = !c.config.pearls ? 0
+        : c.config.pearlEarning === "track" ? 1.2 * mine.hand.length / E.pearlNeed(c, mine)
+        : !disc.length && (mine.pearls || 0) < c.config.pearlCap ? 1.2 : 0;
       const v = value(c, me) - 0.4 * disc.length + pearl;
       if (v > bestVal) { bestVal = v; best = [uid, disc]; }
     }
   }
+  // Forage (brainstorm-stage-3.md 6.3): one card face down, or the whole hand.
+  // Only as a lifeline: one turn ahead, money looks better than what an action
+  // builds, so greedy forages only when its best play gains nothing on standing still.
+  let foraged = null;
+  if (bestVal > value(JSON.parse(base), me) + 0.5) bestVal = Infinity;
+  for (const uid of [...new Set(p.hand.map((u) => s.cards[u]))].map((id) => p.hand.find((u) => s.cards[u] === id)).concat(["hand"])) {
+    if (!E.canForage(s, uid).ok) continue;
+    const c = JSON.parse(base);
+    E.forage(c, uid);
+    const v = value(c, me);
+    if (v > bestVal) { bestVal = v; foraged = uid; }
+  }
+  if (foraged !== null) return E.forage(s, foraged);
   E.playCard(s, ...best);
   greedyActions(s);
   return E.endTurn(s);

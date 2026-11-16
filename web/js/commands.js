@@ -10,6 +10,7 @@
 //   { type: "pearl", kind: "money"|"redraw"|"action", uid }
 //   { type: "end" }                                end the turn
 //   { type: "pass" }                               end the turn with an empty hand
+//   { type: "harbour", hex }                       choose a harbour in the harbour draft
 import * as E from "./engine.js";
 
 const fail = (reason) => ({ ok: false, reason });
@@ -21,13 +22,18 @@ export function validCommand(cmd) {
   const int = (v) => Number.isInteger(v) && v >= 0 && v < 100000;
   const card = int;   // cards in play are numbered
   switch (cmd.type) {
-    case "play": return card(cmd.play) && Array.isArray(cmd.discards) && cmd.discards.length < 12 && cmd.discards.every(card);
+    case "play": return card(cmd.play) && Array.isArray(cmd.discards) && cmd.discards.length < 12 && cmd.discards.every(card)
+      && (cmd.board === undefined || cmd.board === null || str(cmd.board));
     case "dig": return str(cmd.edge);
-    case "build": return str(cmd.hex) && (cmd.kind === undefined || str(cmd.kind));
-    case "buy": return int(cmd.slot);
+    case "build": return str(cmd.hex) && (cmd.kind === undefined || str(cmd.kind)) && (cmd.slot === undefined || str(cmd.slot));
+    case "buy": return int(cmd.slot) && (cmd.top === undefined || typeof cmd.top === "boolean");
+    case "forage": return cmd.uid === "hand" || card(cmd.uid);
     case "trash": return card(cmd.uid) && (cmd.from === "hand" || cmd.from === "discard");
-    case "pearl": return ["money", "redraw", "action"].includes(cmd.kind) && (cmd.uid === undefined || card(cmd.uid));
+    case "pearl": return ["money", "redraw", "action", "reserve", "secondwind"].includes(cmd.kind)
+      && (cmd.kind === "reserve" ? int(cmd.uid) : cmd.uid === undefined || cmd.uid === null || card(cmd.uid));
     case "end": case "pass": return true;
+    case "harbour": return str(cmd.hex);
+    case "startTech": return str(cmd.slot);
     default: return false;
   }
 }
@@ -43,15 +49,18 @@ export function applyCommand(state, cmd) {
   if (state.over) return fail("the game is over");
   let res, reveals = false, ended = false;
   switch (cmd.type) {
-    case "play": res = E.playCard(state, cmd.play, cmd.discards); break;
+    case "play": res = E.playCard(state, cmd.play, cmd.discards, cmd.board || null); break;
     case "dig": res = E.dig(state, cmd.edge); break;
-    case "build": res = E.build(state, cmd.hex, cmd.kind); break;
-    case "buy": res = E.buy(state, cmd.slot); reveals = true; break;
+    case "harbour": res = E.chooseHarbour(state, cmd.hex); ended = res.ok; break;
+    case "startTech": res = E.chooseStartTech(state, cmd.slot); ended = res.ok; break;
+    case "build": res = E.build(state, cmd.hex, cmd.kind, cmd.slot); break;
+    case "buy": res = E.buy(state, cmd.slot, !!cmd.top); reveals = true; break;
     case "trash": res = E.trash(state, cmd.uid, cmd.from); break;
-    case "pearl": res = E.spendPearl(state, cmd.kind, cmd.uid); reveals = cmd.kind === "redraw"; break;
-    case "end": case "pass": {
+    case "pearl": res = E.spendPearl(state, cmd.kind, cmd.uid); reveals = cmd.kind === "redraw" || cmd.kind === "reserve"; break;
+    case "end": case "pass": case "forage": {
       const me = E.currentPlayer(state);
-      res = cmd.type === "pass" ? E.pass(state) : E.endTurn(state);   // pass ends the turn itself
+      // pass and forage end the turn themselves
+      res = cmd.type === "pass" ? E.pass(state) : cmd.type === "forage" ? E.forage(state, cmd.uid) : E.endTurn(state);
       if (res.ok) { me.seen = state.log.length; ended = true; }       // their next recap starts here
       break;
     }
