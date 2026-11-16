@@ -232,7 +232,9 @@ function openRules() {
     const row = data.cards.find((r) => r.id === id);
     if (row && n) { const d = cardDef(row); counts[d.role] = (counts[d.role] || 0) + n; }
   }
+  const sample = (id) => { const row = data.cards.find((r) => r.id === id); return row ? cardView(cardDef(row), { compact: true }) : null; };
   showRules(game, {
+    cards: { starter: sample("start-dig-2"), market: sample("c-spc-1") },
     startingDeck: ["dig", "build", "buy", "earn", "special"].map((r) => [r, counts[r] || 0]),
     notation: data.notation || [],
     closeLabel: app.querySelector(".game") ? "Back to the game" : "Close",
@@ -474,8 +476,8 @@ function renderHome() {
         h("p", { class: "muted" }, "You and computer players at this screen. About 45 minutes."),
         h("label", { class: "row level" }, h("span", { class: "muted" }, "Opponents"),
           h("select", { onchange: (e) => store.set("canals.level", e.target.value) },
-            h("option", { value: "greedy", selected: store.get("canals.level") !== "planner" || null }, "Gentle (quick)"),
-            h("option", { value: "planner", selected: store.get("canals.level") === "planner" || null }, "Strong (they think a second or two)"))),
+            h("option", { value: "greedy", selected: store.get("canals.level") !== "planner" || null }, "Gentle"),
+            h("option", { value: "planner", selected: store.get("canals.level") === "planner" || null }, "Strong (slower to move)"))),
         h("div", { class: "row wrap" }, [1, 2, 3].map((n) => h("button", { class: n === 2 ? "primary" : "", onclick: () => vsComputer(n) }, `${n + 1} players`)))),
       h("section", { class: "door" }, h("h2", {}, "Play with friends"),
         h("p", { class: "muted" }, "Pass this device around, or invite friends to join from their own."),

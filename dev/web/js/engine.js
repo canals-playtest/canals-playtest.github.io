@@ -616,12 +616,12 @@ export const techLevel = (state) => (state.tech ? TECH_LEVEL[state.config.techBo
  * multipliers go in steps.
  */
 export const CAPSTONES = {
-  Channels: { name: "Wayfinder", text: "Highland and marsh hexes count 1 more in your Reach." },
-  Works: { name: "Builder of halls", text: "4 VP of building score." },
+  Channels: { name: "Wayfinder", text: "Highland and marsh hexes count 1 more in your open water." },
+  Works: { name: "Builder of halls", text: "4 more for your building score." },
   Barges: { name: "Pilot", text: "Counts as two more Buy cards." },
   Market: { name: "Elder", text: "Counts as two more Build cards." },
   Stores: { name: "Hoard-keeper", text: "If you own two or more Earn cards, counts as two more cards of the colour that scores you most (not Dig)." },
-  Pearls: { name: "Pearl diver", text: "Each pearl you hold at the end counts as 1 Reach, up to 4." },
+  Pearls: { name: "Pearl diver", text: "Each pearl you hold at the end counts as 1 open water, up to 4." },
 };
 
 /**

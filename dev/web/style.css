@@ -300,6 +300,41 @@ svg.board:hover .hex-label { opacity: .5; }
 .rules .glossary > div { display: flex; gap: .5rem; align-items: flex-start; }
 .rules .glossary svg.icon { width: 2rem; height: 2rem; }
 .rules .muted { font-size: .85rem; }
+.rules .glance { font-size: .95rem; }
+/* Pictures in the rules: map snapshots, cards and the lodge. */
+.rules-fig { margin: .8rem 0 1rem; }
+.rules-fig > svg.board.excerpt { width: 100%; max-height: 22rem; border: 2px solid var(--line); border-radius: 10px; background: #a8cddf; }
+.rules-fig figcaption { font-size: .86rem; color: var(--muted); margin-top: .35rem; line-height: 1.4; }
+.rules .glossary.legend { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: .5rem 1rem; }
+.rules .glossary svg.swatch { width: 4.4rem; height: 4.4rem; flex: none; }
+.rules .glossary span.swatch { width: 4.4rem; height: 4.4rem; flex: none; }
+.rules-fig.side { float: right; width: min(42%, 20rem); margin: .2rem 0 .8rem 1.2rem; }
+.rules-fig.side > svg.board.excerpt { max-height: none; }
+.rules section::after { content: ""; display: block; clear: both; }
+@media (max-width: 640px) { .rules-fig.side { float: none; width: 100%; margin: .8rem 0; } }
+svg.excerpt .excerpt-route { stroke: #e0a81c; stroke-width: 4.5; stroke-linecap: round; stroke-dasharray: 7 5; opacity: .95; pointer-events: none; }
+svg.excerpt .excerpt-fade { fill: #fbf6ea; opacity: .72; pointer-events: none; }
+svg.excerpt .excerpt-focus { fill: none; stroke: #e0a81c; stroke-width: 3; stroke-dasharray: 5 3; pointer-events: none; }
+svg.excerpt .excerpt-label rect { fill: #fbf6ea; stroke: #6b5636; stroke-width: 1; opacity: .95; }
+svg.excerpt .excerpt-label text { font: 700 11px "Nunito", system-ui, sans-serif; fill: #3b2a1a; text-anchor: middle; }
+svg.excerpt .excerpt-label { pointer-events: none; }
+.rules .cards-pair { display: flex; gap: .8rem; justify-content: center; flex-wrap: wrap; }
+.rules .cards-pair .card { width: 11rem; cursor: default; }
+.rules table.buildings td:nth-child(3) { font-weight: 700; text-align: center; }
+.lodge-wrap { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
+.lodge-pic svg.tech-board { width: 100%; max-width: 22rem; display: block; margin: 0 auto; }
+.lodge-pic svg.tech-board .tech-slot { cursor: pointer; outline: none; }
+.lodge-pic svg.tech-board .tech-slot:hover polygon, .lodge-pic svg.tech-board .tech-slot:focus polygon { stroke: #e0a81c; stroke-width: 3; }
+.lodge-sectors { display: flex; flex-wrap: wrap; gap: .25rem; justify-content: center; margin-top: .3rem; font-size: .75rem; }
+.lodge-info { border: 2px solid var(--line); border-radius: 10px; padding: .6rem .8rem; min-height: 12rem; background: color-mix(in srgb, var(--bg) 45%, transparent); }
+.lodge-info p { margin: .25rem 0; }
+.lodge-info-head { font-family: var(--display); font-weight: 700; }
+.lodge-layer { display: grid; grid-template-columns: auto auto 1fr; gap: .45rem; align-items: start; padding: .45rem 0; border-top: 1px dashed var(--line); font-size: .9rem; }
+.lodge-layer.under { grid-template-columns: auto 1fr; }
+.lodge-layer svg.icon { width: 1.8rem; height: 1.8rem; }
+.lodge-tag { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding-top: .2rem; min-width: 5.2rem; }
+.rules ol.tides > li { margin: .5rem 0; }
+@media (max-width: 640px) { .lodge-wrap { grid-template-columns: 1fr; } .lodge-tag { min-width: 0; } }
 @media (max-width: 560px) { .rules { padding: 1rem .9rem 1.5rem; font-size: .92rem; } .rules-overlay { padding: .6rem 8px; } }
 details.map-key > summary { cursor: pointer; color: var(--muted); font-size: .85rem; margin-top: .4rem; }
 details.map-key[open] > summary { margin-bottom: .1rem; }
@@ -562,4 +597,6 @@ svg.board { touch-action: pan-y; }
 .slot-chips { display: flex; flex-wrap: wrap; gap: .2rem; }
 .slot-chip { font-size: .74rem; padding: .1rem .4rem; border-radius: 999px; }
 .slot-chip.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); font-weight: 700; }
-.door .level { margin: 0 0 .6rem; gap: .5rem; }
+.door .level { margin: 0 0 .6rem; gap: .3rem .5rem; flex-wrap: wrap; min-width: 0; }
+.door .level select { flex: 1 1 9rem; min-width: 0; max-width: 100%; }
+.door { min-width: 0; }

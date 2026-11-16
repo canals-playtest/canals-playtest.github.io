@@ -1,7 +1,18 @@
 // SVG rendering of the hex board. Pointy-top axial layout, matching tools/build_board.py.
 import * as E from "./engine.js";
 import { TERRAIN_PATTERN, hasSymbol } from "./sprites.js";
-import { placeName, harbourName, rename } from "./words.js";
+import { placeName, harbourName, rename, codeWords } from "./words.js";
+import { parseEffects } from "./notation.js";
+
+/** A map token's effect as a number and an icon ("+2M" -> "+2" and a coin), for the board. */
+const BADGE_ICON = { money: "i-coin", income: "i-income", dig: "i-dig", build: "i-build", buy: "i-buy", pearl: "i-pearl", trashAny: "i-trash", keys: "i-key", handSize: "i-hand", extraDraw: "i-deck" };
+function badge(code, x, y, size, parent) {
+  const fx = parseEffects(code)[0];
+  const id = fx && BADGE_ICON[fx.kind];
+  const t = el("text", { x: id ? x - size * 0.32 : x, y: y + size * 0.18, class: "bonus" }, parent);
+  t.textContent = id ? `${fx.n}` : code;
+  if (id) sprite(id, x + size * 0.28, y, size * 0.62, parent, { class: "badge-icon" });
+}
 
 // What the last drawing of this game showed, so new canals, buildings and
 // opened hexes can be drawn arriving (docs/state-of-play.md 5.3).
@@ -107,7 +118,7 @@ export function renderBoard(svg, state, handlers) {
     if (h.shore) title.push("shore: beside the sea, so it never counts as open water");
     if (h.feature === "hills") title.push("hills: +1 to dig its borders; a building here scores +1 VP");
     if (h.feature === "marsh") title.push("marsh: 1 cheaper to dig, no building site, +1 open water when opened");
-    if (state.tokens?.[h.key]) title.push(`token site: ${state.tokens[h.key].name} (${state.tokens[h.key].code}) for the first building`);
+    if (state.tokens?.[h.key]) title.push(`token site: ${state.tokens[h.key].name} (${codeWords(state.tokens[h.key].code)}) for the first building`);
     if (h.band && !t.water) title.push(`${h.band}: ${E.hexReach(state, h.key)} open water if opened`);
     if (t.wall) title.push("crag: no site, and no canal between two crags");
     if (t.water && h.band) title.push("lake: once a linked canal reaches one of its corners, all its corners are linked");
@@ -115,8 +126,8 @@ export function renderBoard(svg, state, handlers) {
     if (E.inlandClosed(state) && E.isInland(state, h.key)) title.push("closed until the inland milestone: canals may run along its border with the coast, but none with inland on both sides, and nothing is built here");
     if (E.isOpened(state, h.key, net)) title.push("opened: counts as open water for every player whose canal touches it");
     if (h.bonus) title.push(state.claimed[h.key] !== undefined
-      ? `discovery ${h.bonus}: taken by ${state.players[state.claimed[h.key]].name}`
-      : `discovery ${h.bonus}: the dig that opens this hex takes it`);
+      ? `discovery (${codeWords(h.bonus)}): taken by ${state.players[state.claimed[h.key]].name}`
+      : `discovery (${codeWords(h.bonus)}): the dig that opens this hex takes it`);
     if (!t.water && !(h.slots > 0)) title.push("no building site");
     const tolls = state.config.hauling === "tolls";
     if (mats && tolls && h.shore) title.push("shore: clay comes from here, free; you pay only the tolls");
@@ -165,7 +176,7 @@ export function renderBoard(svg, state, handlers) {
       const taken = state.claimed[h.key] !== undefined;
       const g = el("g", { class: "bonus-token" + (taken ? " claimed" : "") }, gTop);
       sprite("m-discovery", cx + S * 0.38, cy + S * 0.48, S * 0.62, g);
-      el("text", { x: cx + S * 0.38, y: cy + S * 0.56, class: "bonus" }, g).textContent = h.bonus;
+      badge(h.bonus, cx + S * 0.38, cy + S * 0.5, S * 0.42, g);
     }
     if (!t.water && h.slots > 0 && !(state.buildings[h.key] || []).length) {
       sprite("m-site", cx, cy + S * 0.12, S * 0.55, gHex, { class: "site" });
@@ -187,9 +198,9 @@ export function renderBoard(svg, state, handlers) {
       const taken = state.tokenClaimed?.[h.key] !== undefined;
       const g = el("g", { class: "site-token" + (taken ? " claimed" : "") }, gTop);
       el("rect", { x: cx - S * 0.62, y: cy - S * 0.66, width: S * 0.62, height: S * 0.34, rx: S * 0.08, fill: taken ? "#ddd4c4" : "#f6e7b8", stroke: "#7a5f2a", "stroke-width": S * 0.035 }, g);
-      el("text", { x: cx - S * 0.31, y: cy - S * 0.42, class: "bonus", "font-size": S * 0.2, "text-anchor": "middle" }, g).textContent = tok.code;
-      el("title", {}, g).textContent = taken ? `${tok.name} (${tok.code}), taken by ${state.players[state.tokenClaimed[h.key]].name}`
-        : `${tok.name}: ${tok.code} for the first building here`;
+      badge(tok.code, cx - S * 0.31, cy - S * 0.49, S * 0.34, g);
+      el("title", {}, g).textContent = taken ? `${tok.name} (${codeWords(tok.code)}), taken by ${state.players[state.tokenClaimed[h.key]].name}`
+        : `${tok.name}: ${codeWords(tok.code)} for the first building here`;
     }
     if (mats && h.material) {
       // Trees, a peak or a clay bed, left of centre; it stays once the camp is built.
@@ -350,5 +361,53 @@ export function renderTechBoard(state, pi, size = 15, opts = {}) {
   svg.setAttribute("style", `--pc:${p.colour}`);
   svg.setAttribute("role", "img");
   svg.setAttribute("aria-label", `${p.name}'s lodge: ${state.tech.slots.length - taken.length} tokens left`);
+  return svg;
+}
+
+/**
+ * A snapshot of part of the board, for the rules: the board drawn as at the
+ * table (still, not clickable), cropped to the given hexes. opts: route (edge
+ * keys drawn as a highlighted path), labels ([{ hex, text }] pinned to hexes),
+ * focus (hex keys outlined), pad (extra margin in hex radii).
+ */
+export function renderExcerpt(state, hexKeys, opts = {}) {
+  const svg = document.createElementNS(NS, "svg");
+  renderBoard(svg, state, { still: true, interactive: false });
+  const { hexes } = state.board;
+  const keys = hexKeys.filter((k) => hexes[k]);
+  const pts = keys.map((k) => centre(hexes[k]));
+  const pad = S * (opts.pad ?? 1.05);
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  const minX = Math.min(...xs) - pad, minY = Math.min(...ys) - pad;
+  svg.setAttribute("viewBox", `${minX} ${minY} ${Math.max(...xs) + pad - minX} ${Math.max(...ys) + pad - minY}`);
+  const top = el("g", { class: "excerpt-notes" }, svg);
+  if (opts.isolate) {
+    // Fade everything but the given hexes.
+    const holes = keys.map((k) => { const [cx, cy] = centre(hexes[k]); return "M" + corners(cx, cy).map((p) => p.join(",")).join("L") + "Z"; }).join("");
+    el("path", { d: `M${minX - S},${minY - S}h${4 * S + Math.max(...xs) - minX}v${4 * S + Math.max(...ys) - minY}h${-(4 * S + Math.max(...xs) - minX)}Z${holes}`, "fill-rule": "evenodd", class: "excerpt-fade" }, top);
+  }
+  for (const hk of opts.focus || []) {
+    if (!hexes[hk]) continue;
+    const [cx, cy] = centre(hexes[hk]);
+    el("polygon", { points: corners(cx, cy).map((p) => p.join(",")).join(" "), class: "excerpt-focus" }, top);
+  }
+  if (opts.route?.length) {
+    for (const ek of opts.route) {
+      const e = state.board.edges[ek];
+      if (!e) continue;
+      const [[x1, y1], [x2, y2]] = edgeLine(hexes[e.a], hexes[e.b]);
+      el("line", { x1, y1, x2, y2, class: "excerpt-route" }, top);
+    }
+  }
+  for (const { hex, text, dx = 0, dy = -0.62 } of opts.labels || []) {
+    if (!hexes[hex]) continue;
+    const [cx, cy] = centre(hexes[hex]);
+    const g = el("g", { class: "excerpt-label" }, top);
+    const w = Math.max(S * 0.9, text.length * S * 0.25 + S * 0.35);
+    el("rect", { x: cx + dx * S - w / 2, y: cy + dy * S - S * 0.25, width: w, height: S * 0.5, rx: S * 0.14 }, g);
+    el("text", { x: cx + dx * S, y: cy + dy * S + S * 0.13 }, g).textContent = text;
+  }
+  svg.setAttribute("class", "board excerpt");
+  svg.setAttribute("role", "img");
   return svg;
 }
