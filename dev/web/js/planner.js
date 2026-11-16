@@ -20,6 +20,7 @@
 //   test ("planner-fit" in tools/playtest).
 import * as E from "./engine.js";
 import { SearchBot, plan, PLANS, preset, legalMoves, LANES } from "./bots.js";
+import { greedyTurn } from "./agents.js";
 
 const makeRng = (seed) => {
   let a = seed >>> 0 || 1;
@@ -214,9 +215,12 @@ export class PlannerBot extends SearchBot {
     const g = E.cloneState(st, seed);
     const rr = makeRng(seed ^ 0x9e3779b9);
     if (this.opts.shuffle) determinize(g, me, rr);
-    this.forced = c.forced || null;
-    this.resolve(g, c.m);
-    this.forced = null;
+    if (c.greedy) greedyTurn(g);
+    else {
+      this.forced = c.forced || null;
+      this.resolve(g, c.m);
+      this.forced = null;
+    }
     const rounds = Math.min(this.s.horizon, Math.ceil(E.roundsLeft(g)));
     const stop = g.round + rounds;
     let guard = 0;
@@ -235,6 +239,9 @@ export class PlannerBot extends SearchBot {
     this.phase(st);
     const me = (this.seat = st.current);
     const cands = this.candidates(st);
+    // The anchor: the greedy bot's whole turn, kept to the end and played
+    // unless a candidate beats it by `margin` on the same rollouts.
+    if (this.opts.anchor) cands.unshift({ greedy: true });
     if (cands.length <= 1) return cands[0] || null;
     this.models = this.opts.models ? st.players.map((_, i) => (i === me ? null : new SearchBot("model", inferPlan(st, i), 1 + i, [1, 1]))) : null;
     // Sequential halving over the budget.
@@ -246,15 +253,23 @@ export class PlannerBot extends SearchBot {
       const seeds = Array.from({ length: per }, () => Math.floor(this.rng() * 4294967296));
       for (const a of alive) for (const sd of seeds) { a.sum += this.playout(st, a.c, me, sd); a.n++; }
       alive.sort((x, y) => y.sum / y.n - x.sum / x.n);
-      alive = alive.slice(0, Math.ceil(alive.length / 2));
+      const anchor = alive.find((a) => a.c.greedy);
+      if (!anchor) { alive = alive.slice(0, Math.ceil(alive.length / 2)); continue; }
+      // Halve the rivals; the anchor always stays.
+      const rivals = alive.filter((a) => a !== anchor);
+      alive = [anchor, ...rivals.slice(0, Math.ceil(rivals.length / 2))];
+      if (alive.length <= 2) break;
     }
     this.models = null;
+    const anchor = alive.find((a) => a.c.greedy), rival = alive.find((a) => !a.c.greedy);
+    if (anchor && rival) return rival.sum / rival.n > anchor.sum / anchor.n + (this.opts.margin ?? 2) ? rival.c : anchor.c;
     return alive[0].c;
   }
 
   playTurn(st) {
     if (st.turn?.phase === "harbour" || st.turn?.phase === "startTech" || !E.currentPlayer(st).hand.length) return super.playTurn(st);
     const c = this.choose(st);
+    if (c?.greedy) return greedyTurn(st);
     this.seat = st.current;
     this.forced = c.forced || null;
     return this.resolve(st, c.m);

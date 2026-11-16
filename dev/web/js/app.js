@@ -810,9 +810,13 @@ function scheduleAi() {
   aiTimer = setTimeout(aiTurn, (PACES[setup?.aiPace] || PACES.normal)[1] + playbackMs);
 }
 
-/** The planner seat (web/js/planner.js) on a small budget, so a turn takes a second or two in the browser. */
+/**
+ * The planner seat (web/js/planner.js) on a small budget, so a turn takes about
+ * a second in the browser. Anchored on the greedy bot's turn: on this budget the
+ * plain planner lost to the greedy bot, the anchored one beats it (better-bots.md 9).
+ */
 function plannerTurn(st, rnd) {
-  const bot = makePlanner("planner", Math.floor(rnd() * 1e9), [6, 4], { budget: 36 });
+  const bot = makePlanner("planner", Math.floor(rnd() * 1e9), [6, 4], { budget: 36, anchor: true, margin: 0 });
   return bot.playTurn(st);
 }
 

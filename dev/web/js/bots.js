@@ -19,7 +19,22 @@ import { makeRng, tokenValue } from "./agents.js";
 // Weights for banked resources when a rollout stops short of the end, in VP.
 const MONEY_VP = 0.3;
 const INCOME_VP = 1.0;
-const PEARL_VP = 0.8;   // a banked pearl: at least its cash, more as half an action
+const PEARL_VP = 0.8;
+/**
+ * The animals you own are future turns, which a few rounds of look-ahead never
+ * see: without this the search bots bought half as many cards as the greedy
+ * bot and lost to it. Each card bought from the market is worth DECK_VP of its
+ * price while the game is young, fading over its last DECK_FADE rounds (the
+ * greedy bot values cards at their price, a third of it near the end).
+ */
+let DECK_VP = Number(globalThis.process?.env?.DECK_VP ?? 0.6);
+const DECK_FADE = 12;
+export function deckWorth(st, p) {
+  if (!DECK_VP) return 0;
+  let cost = 0;
+  for (const u of E.ownedCards(p)) cost += E.def(st, u).cost || 0;
+  return DECK_VP * cost * Math.min(1, E.roundsLeft(st) / DECK_FADE);
+}   // a banked pearl: at least its cash, more as half an action
 // A dig not linked to the sea: its hexes are credited as if about to open, so
 // this outweighs that double count (sim/agent.py REMOTE_DIG).
 const REMOTE_DIG = -6.0;
@@ -606,6 +621,7 @@ export class SearchBot {
     const p = st.players[pi], cfg = st.config;
     let banked = p.money * MONEY_VP + p.income * INCOME_VP + (p.pearls || 0) * PEARL_VP;
     if (cfg.pearls && cfg.pearlEarning === "track") banked += (PEARL_VP * (p.pearlTrack || 0)) / E.pearlNeed(st, p);
+    banked += deckWorth(st, p);
     return totals[pi] - best + banked;
   }
 
