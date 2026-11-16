@@ -16,7 +16,8 @@
 // - A fitted value (step 2a): where a rollout stops, the position is scored
 //   by a regression of the final margin on features of the position, fitted
 //   from the bots' own games by tools/fit_value.mjs (bots/value-fit.json).
-//   Without a fit it falls back on SearchBot's hand-set evaluation.
+//   Off by default until a fit beats the hand-set evaluation in a mixed-seat
+//   test ("planner-fit" in tools/playtest).
 import * as E from "./engine.js";
 import { SearchBot, plan, PLANS, preset, legalMoves, LANES } from "./bots.js";
 
@@ -160,11 +161,13 @@ export class PlannerBot extends SearchBot {
    * style: a plan or sliders, as SearchBot. opts: { budget (rollouts in all,
    * default rollouts × width of the style), targets (per card, default 3),
    * shuffle (hidden cards, default true), models (opponents by their own lean,
-   * default true), fitted (use the fitted value when installed, default true) }.
+   * default true), fitted (use the fitted value when installed, default false:
+   * the first fit, held-out R² 0.22, scored 14 points a game worse than without,
+   * interval -37 to +8 in 16 mixed games) }.
    */
   constructor(name, style, seed = 1, search = null, opts = {}) {
     super(name, style, seed, search);
-    this.opts = { targets: 3, shuffle: true, models: true, fitted: true, ...opts };
+    this.opts = { targets: 3, shuffle: true, models: true, fitted: false, ...opts };
     this.models = null;
   }
 
