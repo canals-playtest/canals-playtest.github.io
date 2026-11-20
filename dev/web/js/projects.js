@@ -32,7 +32,7 @@
 import * as E from "./engine.js";
 import { greedyTurn, value as greedyValue, borderGraph, makeRng } from "./agents.js";
 import { parseEffects } from "./notation.js";
-import { features as positionFeatures } from "./planner.js";
+import { features as positionFeatures, makePlanner } from "./planner.js";
 import { positionReward, finalReward } from "./reward.js";
 
 export const MEMORIES = ["novice", "regular", "expert"];
@@ -755,6 +755,11 @@ const DEFAULTS = {
   steerOff: false,    // true: plans and logs, but plays plain greedy (for tests)
   useJudge: true,     // judge rollouts' ends with the learned correction, once learned
   useCards: true,     // let what it has learned of the animals steer its buys, once learned
+  // Tactics: "greedy" plays the steered greedy turn; "search" puts it through the Strong seat's
+  // search each turn (planner.js, anchored): the steered turn stands unless a rollout beats it.
+  tactics: "greedy",
+  searchBudget: 36,   // rollouts a turn for "search", as the Strong seat
+  searchWinFirst: true,   // the search judges by the win-first reward
   // Temperament (planning-bots.md 4.5).
   commitment: 2,      // points another bundle must gain over the present one, beyond the noise, to replace it
   opportunism: 0.3,   // 0: steers hard; 1: barely, taking what comes
@@ -1083,7 +1088,12 @@ export class ProjectBot {
     const reasons = this.reasons(st, me);
     if (reasons.length) this.plan(st, me, reasons);
     this.observe(st, me);
-    return greedyTurn(st, null, this.o.steerOff ? null : steer(st, me, this.projects, this.o, this.leaning, this.cardWorth(st)), { fast: true });
+    const cw = this.cardWorth(st);
+    const steered = (g) => greedyTurn(g, null, this.o.steerOff ? null : steer(g, me, this.projects, this.o, this.leaning, cw), { fast: true });
+    if (this.o.tactics !== "search") return steered(st);
+    const search = makePlanner("planner", Math.floor(this.rng() * 1e9), [6, 4],
+      { budget: this.o.searchBudget, anchor: true, margin: 0, anchorTurn: steered, winFirst: this.o.searchWinFirst });
+    return search.playTurn(st);
   }
 
   /**

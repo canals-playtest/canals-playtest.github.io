@@ -21,6 +21,7 @@
 import * as E from "./engine.js";
 import { SearchBot, plan, PLANS, preset, legalMoves, LANES } from "./bots.js";
 import { greedyTurn } from "./agents.js";
+import { positionReward } from "./reward.js";
 
 const makeRng = (seed) => {
   let a = seed >>> 0 || 1;
@@ -164,7 +165,10 @@ export class PlannerBot extends SearchBot {
    * shuffle (hidden cards, default true), models (opponents by their own lean,
    * default true), fitted (use the fitted value when installed, default false:
    * the first fit, held-out R² 0.22, scored 14 points a game worse than without,
-   * interval -37 to +8 in 16 mixed games) }.
+   * interval -37 to +8 in 16 mixed games), anchor (keep a whole turn as a
+   * candidate, played unless a rollout beats it by margin), anchorTurn (that
+   * turn, default the greedy bot's: the project bot passes its steered one),
+   * winFirst (judge by the win-first reward, reward.js) }.
    */
   constructor(name, style, seed = 1, search = null, opts = {}) {
     super(name, style, seed, search);
@@ -178,7 +182,9 @@ export class PlannerBot extends SearchBot {
       // The fit scores the position; pearls on the track are not in it.
       return fittedValue(st, pi) + (st.config.pearls && st.config.pearlEarning === "track" ? (0.8 * (p.pearlTrack || 0)) / E.pearlNeed(st, p) : 0);
     }
-    return super.evaluate(st, pi);
+    const v = super.evaluate(st, pi);
+    // winFirst: the win-first reward (bot-campaigns.md 6), its margin this bot's own reckoning.
+    return this.opts.winFirst ? positionReward(st, pi, v) : v;
   }
 
   /** Candidates: the best card plays by prior, and for the best dig and build plays their best targets too. */
@@ -215,7 +221,7 @@ export class PlannerBot extends SearchBot {
     const g = E.cloneState(st, seed);
     const rr = makeRng(seed ^ 0x9e3779b9);
     if (this.opts.shuffle) determinize(g, me, rr);
-    if (c.greedy) greedyTurn(g);
+    if (c.greedy) (this.opts.anchorTurn || greedyTurn)(g);
     else {
       this.forced = c.forced || null;
       this.resolve(g, c.m);
@@ -269,7 +275,7 @@ export class PlannerBot extends SearchBot {
   playTurn(st) {
     if (st.turn?.phase === "harbour" || st.turn?.phase === "startTech" || !E.currentPlayer(st).hand.length) return super.playTurn(st);
     const c = this.choose(st);
-    if (c?.greedy) return greedyTurn(st);
+    if (c?.greedy) return (this.opts.anchorTurn || greedyTurn)(st);
     this.seat = st.current;
     this.forced = c.forced || null;
     return this.resolve(st, c.m);
