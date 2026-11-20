@@ -239,7 +239,8 @@ function greedyActions(s, intent = null, fast = false) {
         const liked = intent?.buyRole?.[d.role] || 0;
         if (keep && !liked && p.money - E.buyCost(s, uid) < keep) return;
         const thins = intent?.buyTrash && [...(d.base || []), ...(d.boost || [])].some((e) => String(e.kind).startsWith("trash")) ? intent.buyTrash : 0;
-        const sc = d.cost + (d.role === "special" ? 5 : 0) + d.vp + liked + thins;
+        const learned = intent?.cardWorth ? intent.cardWorth(uid) : 0;   // what a learning bot has found this animal worth
+        const sc = d.cost + (d.role === "special" ? 5 : 0) + d.vp + liked + thins + learned;
         if (sc > bestScore) { bestScore = sc; best = i; }
       });
       if (best !== null) {

@@ -32,6 +32,8 @@
 import * as E from "./engine.js";
 import { greedyTurn, value as greedyValue, borderGraph, makeRng } from "./agents.js";
 import { parseEffects } from "./notation.js";
+import { features as positionFeatures } from "./planner.js";
+import { positionReward, finalReward } from "./reward.js";
 
 export const MEMORIES = ["novice", "regular", "expert"];
 export const LEANINGS = ["even", "dig", "build", "buy", "special"];
@@ -172,6 +174,94 @@ function drawLeaning(own, key, rnd) {
     if (v > bestV) { bestV = v; best = L; }
   }
   return best;
+}
+
+// --------------------------------------------------------------------------- //
+// Learned judgements, kept as sums (planning-bots.md 6.1; bot-campaigns.md 6)
+// --------------------------------------------------------------------------- //
+// Two regressions, each kept as its running sums (X'X, X'y, y'y, n), so games
+// played apart add up exactly like every other belief:
+//
+// - judge: what a position is worth, as a correction to the hand-set
+//   reckoning. Each of a learner's turns gives a row: the planner's 40
+//   features of the position (its lead in each fact, and the same scaled by the
+//   game still to come), and as target the game's final reward less the
+//   reward the hand-set reckoning gave that position. Rows are weighted so a
+//   game counts once, however many turns it had.
+// - cards: what owning one more of an animal, bought in a tide, is worth in
+//   final reward. One row a learner a game: counts by design and tide of what
+//   it bought, and its final reward.
+//
+// Both are ridge regressions toward zero (that is, toward the hand-set
+// judgement, and toward "an animal is worth what the formulas say"), so a few
+// games cannot pull a bot far. At the start of a game the weights are drawn
+// from their posterior (Thompson sampling), as the other beliefs are.
+
+const FEATURE_SCALE = (() => {
+  const s19 = [50, 5, 3, 2, 1, 5, 5, 3, 1, 1, 1, 5, 5, 5, 2, 2, 2, 2, 3];   // planner.js FEATURE_KEYS, in typical sizes
+  return [1, 1, ...s19, ...s19];
+})();
+const JUDGE = { lambda: 30, minGames: 30 }, CARDS = { lambda: 20, minRows: 50, cap: 6, weight: 0.5 };
+const scaledFeatures = (st, pi) => positionFeatures(st, pi).map((x, i) => x / FEATURE_SCALE[i]);
+const freshSums = (d, keys = null) => ({ d, n: 0, yy: 0, xty: Array(d).fill(0), xtx: Array(d * d).fill(0), ...(keys ? { keys } : {}) });
+function addRow(S, x, y, w = 1) {
+  const d = S.d;
+  for (let i = 0; i < d; i++) {
+    if (!x[i]) continue;
+    S.xty[i] += w * x[i] * y;
+    for (let j = 0; j < d; j++) if (x[j]) S.xtx[i * d + j] += w * x[i] * x[j];
+  }
+  S.yy += w * y * y;
+}
+/** Cholesky factor of a d×d matrix (flat): lower L with A = L Lᵀ. */
+function cholesky(A, d) {
+  const L = Array(d * d).fill(0);
+  for (let i = 0; i < d; i++) for (let j = 0; j <= i; j++) {
+    let s = A[i * d + j];
+    for (let k = 0; k < j; k++) s -= L[i * d + k] * L[j * d + k];
+    L[i * d + j] = i === j ? Math.sqrt(Math.max(s, 1e-9)) : s / L[j * d + j];
+  }
+  return L;
+}
+/**
+ * The ridge weights and one draw from their posterior: w ~ N(ŵ, σ² (X'X + λI)⁻¹),
+ * σ² the residual variance. rnd null: the mean, no draw.
+ */
+function ridgeDraw(S, lambda, rnd) {
+  const d = S.d, A = S.xtx.slice();
+  for (let i = 0; i < d; i++) A[i * d + i] += lambda;
+  const L = cholesky(A, d);
+  // ŵ: L z = X'y, Lᵀ ŵ = z.
+  const z = Array(d).fill(0), w = Array(d).fill(0);
+  for (let i = 0; i < d; i++) { let s = S.xty[i]; for (let k = 0; k < i; k++) s -= L[i * d + k] * z[k]; z[i] = s / L[i * d + i]; }
+  for (let i = d - 1; i >= 0; i--) { let s = z[i]; for (let k = i + 1; k < d; k++) s -= L[k * d + i] * w[k]; w[i] = s / L[i * d + i]; }
+  if (!rnd) return w;
+  let fit = 0; for (let i = 0; i < d; i++) fit += w[i] * S.xty[i];
+  const sigma = Math.sqrt(Math.max(1, (S.yy - fit) / Math.max(1, S.n - 1)));
+  // Lᵀ e = g, g standard normal: e ~ N(0, (L Lᵀ)⁻¹).
+  const g = Array.from({ length: d }, () => gauss(rnd)), e = Array(d).fill(0);
+  for (let i = d - 1; i >= 0; i--) { let s = g[i]; for (let k = i + 1; k < d; k++) s -= L[k * d + i] * e[k]; e[i] = s / L[i * d + i]; }
+  return w.map((x, i) => x + sigma * e[i]);
+}
+/** The non-starting animals of this game, in a fixed order: the cards regression's columns. */
+const cardKeys = (st) => [...new Set(Object.values(st.cards).filter((id) => !String(st.defs[id]?.deck).startsWith("start")))].sort()
+  .flatMap((id) => [1, 2, 3].map((t) => `${id}|${t}`));
+
+/** The ridge weights of a set of sums (for tests and reports). */
+export const ridgeWeights = (S, lambda) => ridgeDraw(S, lambda, null);
+export { freshSums, addRow };
+
+/** What a level has learned of judging positions and animals, read as numbers (for reports). */
+export function describeJudgements(shared) {
+  const out = { judge: null, cards: null };
+  const J = shared?.judge;
+  if (J?.n) out.judge = { games: J.n, weights: ridgeDraw(J, JUDGE.lambda, null) };
+  const C = shared?.cards;
+  if (C?.n) {
+    const w = ridgeDraw(C, CARDS.lambda, null);
+    out.cards = { rows: C.n, values: C.keys.map((k, i) => ({ key: k, value: w[i + 1] })).filter((x) => x.value !== 0) };
+  }
+  return out;
 }
 
 // Shared beliefs by level, set by whoever loads them (the suite, the table).
@@ -614,8 +704,8 @@ function masteryWorth(r, sector) {
 const sameProject = (a, b) => a.kind === b.kind && a.hex === b.hex && a.type === b.type && a.role === b.role && a.sector === b.sector && a.id === b.id && a.mode === b.mode;
 
 /** The intent a set of live projects gives the tactics, in the present position. */
-export function steer(st, pi, projects, temper = null, leaning = null) {
-  if (!projects.length) return null;
+export function steer(st, pi, projects, temper = null, leaning = null, cardWorth = null) {
+  if (!projects.length) return cardWorth ? { hexBonus: {}, build: [], buyRole: {}, reserve: 0, goals: [], terms: [], cardWorth } : null;
   const r = read(st, pi);
   const intent = { hexBonus: {}, build: [], buyRole: {}, reserve: 0, goals: [], terms: [] };
   for (const x of projects) KINDS[x.kind].steer(r, x, intent);
@@ -629,6 +719,7 @@ export function steer(st, pi, projects, temper = null, leaning = null) {
   }
   if (temper?.caution) intent.reserve = Math.max(intent.reserve, Math.round(4 * temper.caution));
   if (leaning && leaning !== "even") intent.buyRole[leaning] = (intent.buyRole[leaning] || 0) + 1.5;
+  if (cardWorth) intent.cardWorth = cardWorth;
   const goals = intent.goals, terms = intent.terms;
   if (goals.length || terms.length) {
     // Progress: each dig nearer a place being made for is worth something this turn.
@@ -662,6 +753,8 @@ const DEFAULTS = {
   rivals: true,       // read rivals' projects and let them follow them in rollouts (with regard > 0)
   learn: true,        // draw from its beliefs; finish() updates them
   steerOff: false,    // true: plans and logs, but plays plain greedy (for tests)
+  useJudge: true,     // judge rollouts' ends with the learned correction, once learned
+  useCards: true,     // let what it has learned of the animals steer its buys, once learned
   // Temperament (planning-bots.md 4.5).
   commitment: 2,      // points another bundle must gain over the present one, beyond the noise, to replace it
   opportunism: 0.3,   // 0: steers hard; 1: barely, taking what comes
@@ -699,6 +792,46 @@ export class ProjectBot {
     // Leanings are private experience: without its own file a bot starts even.
     this.leaning = this.o.leaning || (learn && this.own ? drawLeaning(this.own, this.key, rnd) : "even");
     this.startLeaning = this.leaning;
+    // The learned judgements, drawn for this game once there is enough behind them.
+    const sh = this.beliefsShared;
+    this.judgeW = learn && this.o.useJudge && sh?.judge?.n >= (this.o.judgeMin ?? JUDGE.minGames) ? ridgeDraw(sh.judge, JUDGE.lambda, rnd) : null;
+    this.cardW = null;
+    if (learn && this.o.useCards && sh?.cards?.n >= (this.o.cardsMin ?? CARDS.minRows)) {
+      const w = ridgeDraw(sh.cards, CARDS.lambda, rnd);
+      this.cardW = Object.fromEntries(sh.cards.keys.map((k, i) => [k, clip(w[i + 1], -CARDS.cap, CARDS.cap)]));
+    }
+    this.positions = [];
+    this.bought = {};
+    this.ownedSeen = null;
+  }
+
+  /** A position's worth to me: the reward by the hand-set reckoning, and the learned correction to it. */
+  judge(st, me) {
+    const base = positionReward(st, me, margin(st, me));
+    if (!this.judgeW || st.over) return base;
+    const x = scaledFeatures(st, me);
+    let c = 0; for (let i = 0; i < x.length; i++) c += this.judgeW[i] * x[i];
+    return base + c;
+  }
+
+  /** What owning one more of this animal is worth now, by what this bot has learned (for its buys). */
+  cardWorth(st) {
+    if (!this.cardW) return null;
+    const t = E.tideNow(st), w = this.cardW;
+    return (uid) => CARDS.weight * (w[`${st.cards[uid]}|${t}`] || 0);
+  }
+
+  /** Each turn: the position, for learning to judge; and animals bought since last time, by tide. */
+  observe(st, me, position = true) {
+    if (!this.o.learn || !this.positions) return;
+    if (position) this.positions.push({ x: scaledFeatures(st, me), base: positionReward(st, me, margin(st, me)) });
+    const now = {};
+    for (const u of E.ownedCards(st.players[me])) { const id = st.cards[u]; if (!String(st.defs[id]?.deck).startsWith("start")) now[id] = (now[id] || 0) + 1; }
+    if (this.ownedSeen) for (const [id, n] of Object.entries(now)) {
+      const more = n - (this.ownedSeen[id] || 0);
+      if (more > 0) { const k = `${id}|${E.tideNow(st)}`; this.bought[k] = (this.bought[k] || 0) + more; }
+    }
+    this.ownedSeen = now;
   }
 
   /** A kind's belief this game: { turns, gain, success }. */
@@ -863,7 +996,7 @@ export class ProjectBot {
         greedyTurn(g, null, steer(g, i, theirs[i]), { fast: true });
       } else greedyTurn(g, null, null, { fast: true });
     }
-    return margin(g, me);
+    return this.judge(g, me);
   }
 
   /**
@@ -949,7 +1082,8 @@ export class ProjectBot {
     this.seat = me;
     const reasons = this.reasons(st, me);
     if (reasons.length) this.plan(st, me, reasons);
-    return greedyTurn(st, null, this.o.steerOff ? null : steer(st, me, this.projects, this.o, this.leaning), { fast: true });
+    this.observe(st, me);
+    return greedyTurn(st, null, this.o.steerOff ? null : steer(st, me, this.projects, this.o, this.leaning, this.cardWorth(st)), { fast: true });
   }
 
   /**
@@ -961,11 +1095,26 @@ export class ProjectBot {
     if (me === undefined || me === null) return null;
     for (const x of this.projects) this.close(st, x, "dropped");
     this.projects = [];
-    const sc = st.players.map((_, i) => E.score(st, i).total);
-    const best = Math.max(...sc.filter((_, i) => i !== me)), m = sc[me] - best;
-    const lessons = { margin: m, leaning: this.startLeaning, key: this.key, kinds: {} };
+    const fin = finalReward(st, me), m = fin.margin, R = fin.R;
+    const lessons = { margin: m, won: fin.won, reward: R, leaning: this.startLeaning, key: this.key, kinds: {} };
     if (!this.o.learn) return lessons;
     const shared = this.beliefsShared, own = this.own;
+    // The judgements: this game's positions against how it ended, and what was bought against how it ended.
+    if (shared && this.positions?.length) {
+      const J = (shared.judge ||= freshSums(FEATURE_SCALE.length)), w = 1 / this.positions.length;
+      for (const x of this.positions) addRow(J, x.x, R - x.base, w);
+      J.n++;
+    }
+    if (shared && this.bought) {
+      this.observe(st, me, false);   // what was bought on the last turn
+      const keys = cardKeys(st);
+      const C = (shared.cards ||= freshSums(keys.length + 1, keys));
+      if (C.keys.length === keys.length) {
+        const x = [1, ...C.keys.map((k) => this.bought[k] || 0)];
+        addRow(C, x, R);
+        C.n++;
+      }
+    }
     for (const rec of this.records) {
       for (const b of [shared, own]) {
         if (!b) continue;
@@ -984,7 +1133,8 @@ export class ProjectBot {
     if (shared) { shared.games++; addStat(shared.table.rounds, st.round); }
     if (own) {
       own.games++;
-      for (const key of [this.startLeaning, `${this.startLeaning}|${this.key}`]) addStat(own.leanings[key] ||= stat(), m);
+      // Leanings are credited with the reward: a win counts for more than a high score.
+      for (const key of [this.startLeaning, `${this.startLeaning}|${this.key}`]) addStat(own.leanings[key] ||= stat(), R);
     }
     return lessons;
   }
@@ -1015,8 +1165,9 @@ export function makeProjectBot(name, seed = 1, opts = {}) {
 /** Add what a copy learned (after - before) into base, leaf by leaf: every belief is a sum of counts. */
 export function addLearned(base, after, before) {
   for (const [k, v] of Object.entries(after || {})) {
+    if (k === "d") { base.d ??= v; continue; }   // a regression's dimension: a size, not a count
     if (typeof v === "number") base[k] = (base[k] || 0) + v - (typeof before?.[k] === "number" ? before[k] : 0);
-    else if (v && typeof v === "object") addLearned((base[k] ||= {}), v, before?.[k]);
+    else if (v && typeof v === "object") addLearned((base[k] ||= Array.isArray(v) ? [] : {}), v, before?.[k]);
     else if (base[k] === undefined) base[k] = v;
   }
   return base;
