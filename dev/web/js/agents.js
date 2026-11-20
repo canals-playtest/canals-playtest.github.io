@@ -8,6 +8,10 @@
 //            by simple priorities, keeps the best-scoring result. Digs toward
 //            whatever the network can open that is worth most to it: Reach,
 //            discoveries, building sites and key tiles.
+//
+// greedyTurn also takes an `intent` (web/js/projects.js): places to make for,
+// buildings and card colours wanted, shells to keep, and a value for progress.
+// Without one it plays exactly as before.
 
 import * as E from "./engine.js";
 import { legalDiscards, parseEffects } from "./notation.js";
@@ -39,7 +43,7 @@ export function makeRng(seed) {
 }
 
 /** Discard choices that legally pay a card's boost: [] plus one representative per legal count. */
-function boostChoices(s, uid, rest) {
+export function boostChoices(s, uid, rest) {
   const d = E.def(s, uid), bc = d.boostCost;
   const cheapest = [...rest].sort((a, b) => E.def(s, a).cost - E.def(s, b).cost);
   const out = [[]];
@@ -82,7 +86,7 @@ export function randomTurn(s, rnd) {
 export const GREEDY_TUNING = { lookahead: 6, hubWorth: 20, remoteDig: 2 };  // lookahead: digs along borders
 
 /** What reaching hex hk is worth to the current player, in rough VP. */
-function hexWorth(s, hk, counts) {
+export function hexWorth(s, hk, counts) {
   const h = s.board.hexes[hk], cfg = s.config;
   let w = 0;
   if (!h.shore && cfg.networkScore === "reach") w += Math.max(0.5, counts.buy) * E.hexReach(s, hk);
@@ -95,16 +99,21 @@ function hexWorth(s, hk, counts) {
   return w;
 }
 
-/** Borders that meet each border at a corner: the moves a canal can make next. */
-function borderGraph(s) {
-  const byCorner = {}, adj = {};
+/** Borders that meet each border at a corner: the moves a canal can make next. Kept per board. */
+const GRAPHS = new WeakMap();
+export function borderGraph(s) {
+  let adj = GRAPHS.get(s.board);
+  if (adj) return adj;
+  const byCorner = {};
+  adj = {};
   for (const ek of Object.keys(s.board.edges)) for (const c of E.edgeCorners(ek)) (byCorner[c] ||= []).push(ek);
   for (const ek of Object.keys(s.board.edges)) adj[ek] = [...new Set(E.edgeCorners(ek).flatMap((c) => byCorner[c]))].filter((n) => n !== ek);
+  GRAPHS.set(s.board, adj);
   return adj;
 }
 
 /** Digs still needed after each border to put a canal on one of hex hk's borders (0: it is one). */
-function digsTo(s, adj, hk) {
+export function digsTo(s, adj, hk, limit = GREEDY_TUNING.lookahead) {
   const dist = {}, queue = [];
   for (const ek of Object.keys(s.board.edges)) {
     const e = s.board.edges[ek];
@@ -112,23 +121,27 @@ function digsTo(s, adj, hk) {
   }
   while (queue.length) {
     const ek = queue.shift();
-    for (const n of adj[ek]) if (dist[n] === undefined && dist[ek] < GREEDY_TUNING.lookahead) { dist[n] = dist[ek] + 1; queue.push(n); }
+    for (const n of adj[ek]) if (dist[n] === undefined && dist[ek] < limit) { dist[n] = dist[ek] + 1; queue.push(n); }
   }
   return dist;
 }
 
-function pickDig(s) {
+function pickDig(s, intent = null) {
   const link = E.linkedNetwork(s);
   const net = E.networkHexes(s, link);
   const counts = expectedCounts(s, s.current);
   const adj = borderGraph(s);
+  // An intent's places: worth their bonus until a canal of mine touches them,
+  // whether or not another family's water is there already.
+  const want = intent?.hexBonus || null;
+  const wanted = (k) => (want && want[k] && !E.ownCanalAt(s, k, s.current, link) ? want[k] : 0);
   // Targets: unreached hexes worth steering toward, a few digs out. Canals
   // join at corners, so distance is counted in digs along borders.
   const targets = Object.keys(s.board.hexes)
-    .filter((k) => !net.has(k) && !E.isWater(s, k))
-    .map((k) => ({ k, w: hexWorth(s, k, counts) }))
+    .filter((k) => (!net.has(k) || wanted(k) > 0) && !E.isWater(s, k))
+    .map((k) => ({ k, w: (net.has(k) ? 0 : hexWorth(s, k, counts)) + wanted(k), far: wanted(k) > 0 }))
     .filter((t) => t.w >= 3)
-    .map((t) => ({ ...t, dist: digsTo(s, adj, t.k) }));
+    .map((t) => ({ ...t, dist: digsTo(s, adj, t.k, t.far ? 12 : GREEDY_TUNING.lookahead) }));
   const pull = (ek) => {           // how strongly a canal here leads toward a target
     let best = 0;
     for (const t of targets) { const d = t.dist[ek]; if (d > 0) best = Math.max(best, t.w / (1 + d)); }
@@ -147,14 +160,15 @@ function pickDig(s) {
       continue;
     }
     const fresh = [e.a, e.b].filter((hk) => !net.has(hk));
-    const sc = fresh.reduce((a, hk) => a + hexWorth(s, hk, counts), 0) + pull(ek) - 0.5 * E.digCost(s, ek);
+    let sc = fresh.reduce((a, hk) => a + hexWorth(s, hk, counts), 0) + pull(ek) - 0.5 * E.digCost(s, ek);
+    if (want) sc += wanted(e.a) + wanted(e.b);
     if (sc > bestScore) { bestScore = sc; best = ek; }
   }
   return best;
 }
 
 /** What a building type's own effect is worth here, in rough VP; as sim/agent.py. */
-function typeExtras(s, hk, bt, left) {
+export function typeExtras(s, hk, bt, left) {
   const fade = Math.min(1, left / 12), h = s.board.hexes[hk], cfg = s.config;
   let v = 0;
   if (bt.vpPerNeighbour) {
@@ -181,28 +195,37 @@ function spendPearls(s) {
   if (p.pearls >= (cfg.pearlEarning === "track" ? Math.min(3, cfg.pearlCap) : cfg.pearlCap)) E.spendPearl(s, "money");
 }
 
-function greedyActions(s) {
+function greedyActions(s, intent = null, fast = false) {
   const p = E.currentPlayer(s);
   spendPearls(s);
+  // An intent's wishes: a bonus for a wanted building, and shells kept back from anything else.
+  // A wish may name a lodge slot (a mastery's sector): it counts only where that slot can be used.
+  const slotOk = (w, bt) => w.slot === undefined || !!E.pickSlot(s, s.current, bt.id, w.slot);
+  const wish = (hk, bt) => (intent?.build || []).reduce((a, w) => a + ((w.hex === undefined || w.hex === hk) && (w.type === undefined || w.type === bt.id) && slotOk(w, bt) ? w.bonus : 0), 0);
+  const wishSlot = (hk, bt) => (intent?.build || []).find((w) => w.slot !== undefined && (w.hex === undefined || w.hex === hk) && w.type === bt.id && slotOk(w, bt))?.slot;
+  const keep = intent?.reserve || 0;
   for (let guard = 0; guard < 12; guard++) {
     const t = s.turn.pool;
-    if (t.dig > 0) { const ek = pickDig(s); if (ek) { E.dig(s, ek); continue; } }
+    if (t.dig > 0) { const ek = pickDig(s, intent); if (ek) { E.dig(s, ek); continue; } }
     // Build: key tiles first, then the building worth most in rough money terms.
     if (t.build > 0) {
       let best = null, bestScore = -Infinity;
       const left = E.roundsLeft(s);
       const counts = expectedCounts(s, s.current);
+      const haul = fast && s.config.materials ? E.hauls(s) : undefined;   // one set of routes for every price asked here
       for (const hk of Object.keys(s.board.hexes)) {
         const h = s.board.hexes[hk];
         for (const bt of s.buildingTypes) {
-          if (!E.canBuild(s, hk, bt.id).ok) continue;
+          if (!E.canBuild(s, hk, bt.id, haul).ok) continue;
           const vp = E.buildingVP(s, hk, { p: s.current, type: bt.id });
-          const sc = (h.isKey && !(s.buildings[hk] || []).some((x) => x.p === s.current) ? Math.max(0.5, counts.special) * s.config.vpPerKey * E.villageKeys(s, hk) : 0) + 1.2 * vp * Math.max(0.5, counts.dig)
+          const wished = intent ? wish(hk, bt) : 0;
+          if (keep && !wished && p.money - E.buildPrice(s, hk, bt.id, s.current, haul).total < keep) continue;
+          const sc = wished + (h.isKey && !(s.buildings[hk] || []).some((x) => x.p === s.current) ? Math.max(0.5, counts.special) * s.config.vpPerKey * E.villageKeys(s, hk) : 0) + 1.2 * vp * Math.max(0.5, counts.dig)
             + 0.4 * (E.techOn(s) ? E.buildIncome(s, bt.id, E.pickSlot(s, s.current, bt.id)?.id) : s.config.incomePerBuilding + bt.income) * Math.min(left, 8)
             - (E.techOn(s) && E.pickSlot(s, s.current, bt.id)?.leap ? 1.5 : 0)
-            + 0.8 * bt.moneyPerCanal * E.canalsAround(s, hk) - 0.8 * E.buildCost(s, hk, bt.id)
+            + 0.8 * bt.moneyPerCanal * E.canalsAround(s, hk) - 0.8 * E.buildPrice(s, hk, bt.id, s.current, haul).total
             + typeExtras(s, hk, bt, left) + tokenValue(s, hk, Math.min(1, left / 12)) + 1.5 * (bt.freeDig || 0);
-          if (sc > bestScore) { bestScore = sc; best = [hk, bt.id]; }
+          if (sc > bestScore) { bestScore = sc; best = intent ? [hk, bt.id, wishSlot(hk, bt)] : [hk, bt.id]; }
         }
       }
       if (best) { E.build(s, ...best); continue; }
@@ -213,7 +236,10 @@ function greedyActions(s) {
       E.marketCards(s).forEach((uid, i) => {
         if (!E.canBuy(s, i).ok) return;
         const d = E.def(s, uid);
-        const sc = d.cost + (d.role === "special" ? 5 : 0) + d.vp;
+        const liked = intent?.buyRole?.[d.role] || 0;
+        if (keep && !liked && p.money - E.buyCost(s, uid) < keep) return;
+        const thins = intent?.buyTrash && [...(d.base || []), ...(d.boost || [])].some((e) => String(e.kind).startsWith("trash")) ? intent.buyTrash : 0;
+        const sc = d.cost + (d.role === "special" ? 5 : 0) + d.vp + liked + thins;
         if (sc > bestScore) { bestScore = sc; best = i; }
       });
       if (best !== null) {
@@ -223,9 +249,14 @@ function greedyActions(s) {
       }
     }
     // Trash: starting Earn cards once the deck has another Earn card.
-    const trashable = (src) => (src === "hand" ? p.hand : p.discard).find((u) => E.canTrash(s, u, src).ok && s.cards[u].startsWith("start-earn"));
+    // With an intent to thin the deck: any starting card, Earn last; otherwise starting Earn cards once there is another.
+    const thin = !!intent?.thin;
+    const trashable = (src) => {
+      const list = (src === "hand" ? p.hand : p.discard).filter((u) => E.canTrash(s, u, src).ok && s.cards[u].startsWith(thin ? "start" : "start-earn"));
+      return thin ? list.sort((a, b) => (s.cards[a].startsWith("start-earn") ? 1 : 0) - (s.cards[b].startsWith("start-earn") ? 1 : 0))[0] : list[0];
+    };
     const tu = trashable("discard") ?? trashable("hand");
-    if (tu && E.ownedCards(p).some((u) => E.def(s, u).role === "earn" && !s.cards[u].startsWith("start"))) {
+    if (tu && (thin && !s.cards[tu].startsWith("start-earn") || E.ownedCards(p).some((u) => E.def(s, u).role === "earn" && !s.cards[u].startsWith("start")))) {
       E.trash(s, tu, p.discard.includes(tu) ? "discard" : "hand");
       continue;
     }
@@ -233,7 +264,8 @@ function greedyActions(s) {
   }
 }
 
-function value(s, pi) {
+export function value(s, pi, intent = null) {
+  if (intent?.progress) return value(s, pi) + intent.progress(s, pi);
   const p = s.players[pi];
   const left = E.roundsLeft(s);
   // Each lane's score times its expected final multiplier (expectedCounts).
@@ -268,19 +300,25 @@ export function expectedCounts(s, pi, counts = E.score(s, pi).counts) {
   return Object.fromEntries(LANE_ROLES.map((r) => [r, E.smoothMultiplier(s.config, counts[r] + (1 - f) * lanePrior[r])]));
 }
 
-export function greedyTurn(s) {
+/**
+ * The greedy turn. `intent` steers it (projects.js); `opts.fast` copies the
+ * game by cloneState and shares hauling routes within a build, which plays
+ * the same turn in about half the time (the default path is left as it was).
+ */
+export function greedyTurn(s, rnd = null, intent = null, opts = null) {
   if (s.turn?.phase === "harbour") return E.chooseHarbour(s, E.bestHarbour(s));
   if (s.turn?.phase === "startTech") return E.chooseStartTech(s, E.bestStartTech(s, E.rngFn(s)));
   const p = E.currentPlayer(s);
   if (!p.hand.length) return E.pass(s);
-  const me = s.current;
-  const base = JSON.stringify({ ...s, log: [], history: [] });
+  const me = s.current, fast = !!opts?.fast;
+  const base = fast ? null : JSON.stringify({ ...s, log: [], history: [] });
+  const copy = () => (fast ? E.cloneState(s) : JSON.parse(base));
   let best = null, bestVal = -Infinity;
   for (const uid of p.hand) {
     for (const disc of boostChoices(s, uid, p.hand.filter((u) => u !== uid))) {
-      const c = JSON.parse(base);
+      const c = copy();
       if (!E.playCard(c, uid, disc).ok) continue;
-      greedyActions(c);
+      greedyActions(c, intent, fast);
       // Holding cards has some option value, and kept cards earn pearls: on the
       // track each one is a share of the next pearl; under the earlier rule a
       // turn without discards banks one.
@@ -288,7 +326,7 @@ export function greedyTurn(s) {
       const pearl = !c.config.pearls ? 0
         : c.config.pearlEarning === "track" ? 1.2 * mine.hand.length / E.pearlNeed(c, mine)
         : !disc.length && (mine.pearls || 0) < c.config.pearlCap ? 1.2 : 0;
-      const v = value(c, me) - 0.4 * disc.length + pearl;
+      const v = value(c, me, intent) - 0.4 * disc.length + pearl;
       if (v > bestVal) { bestVal = v; best = [uid, disc]; }
     }
   }
@@ -296,17 +334,17 @@ export function greedyTurn(s) {
   // Only as a lifeline: one turn ahead, money looks better than what an action
   // builds, so greedy forages only when its best play gains nothing on standing still.
   let foraged = null;
-  if (bestVal > value(JSON.parse(base), me) + 0.5) bestVal = Infinity;
+  if (bestVal > value(copy(), me, intent) + 0.5) bestVal = Infinity;
   for (const uid of [...new Set(p.hand.map((u) => s.cards[u]))].map((id) => p.hand.find((u) => s.cards[u] === id)).concat(["hand"])) {
     if (!E.canForage(s, uid).ok) continue;
-    const c = JSON.parse(base);
+    const c = copy();
     E.forage(c, uid);
-    const v = value(c, me);
+    const v = value(c, me, intent);
     if (v > bestVal) { bestVal = v; foraged = uid; }
   }
   if (foraged !== null) return E.forage(s, foraged);
   E.playCard(s, ...best);
-  greedyActions(s);
+  greedyActions(s, intent, fast);
   return E.endTurn(s);
 }
 
